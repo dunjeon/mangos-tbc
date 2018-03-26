@@ -1277,8 +1277,6 @@ void Aura::TriggerSpell()
                         if (triggerTarget->GetTypeId() != TYPEID_UNIT)
                             return;
                         break;
-//                    // Overload
-//                    case 29768: break;
 //                    // Return Fire
 //                    case 29788: break;
 //                    // Return Fire
@@ -1290,10 +1288,6 @@ void Aura::TriggerSpell()
                     case 29917:                             // Feed Captured Animal
                         trigger_spell_id = 29916;
                         break;
-//                    // Flame Wreath
-//                    case 29946: break;
-//                    // Flame Wreath
-//                    case 29947: break;
 //                    // Mind Exhaustion Passive
 //                    case 30025: break;
 //                    // Nether Beam - Serenity
@@ -1827,6 +1821,14 @@ void Aura::TriggerSpell()
                 triggerTarget->CastCustomSpell(triggerTarget, trigger_spell_id, &m_modifier.m_amount, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED, nullptr, this);
                 return;
             }
+            case 29768:                                     // Overload
+            {
+                int32 damage = m_modifier.m_amount * (pow(2.0f, GetAuraTicks()));
+                if (damage > 3200)
+                    damage = 3200;
+                triggerCaster->CastCustomSpell(triggerTarget, triggeredSpellInfo, &damage, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED, nullptr, this, casterGUID);
+                return;
+            }
             case 33525:                                     // Ground Slam
                 triggerTarget->CastSpell(triggerTarget, trigger_spell_id, TRIGGERED_OLD_TRIGGERED, nullptr, this, casterGUID);
                 return;
@@ -2152,6 +2154,23 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                 }
                 break;
             }
+            case SPELLFAMILY_PALADIN:
+            {
+                if (GetSpellProto()->SpellVisual == 9180) // Blessing of light
+                {
+                    if (Unit* caster = GetCaster())
+                    {
+                        if (Aura* aura = caster->GetAura(38320, EFFECT_INDEX_0)) // improved Blessing of light
+                        {
+                            if (GetEffIndex() == EFFECT_INDEX_0)
+                                m_modifier.m_amount += aura->m_modifier.m_amount; // holy light gets full amount
+                            else
+                                m_modifier.m_amount += (aura->m_modifier.m_amount / 2); // flash of light gets half
+                        }
+                    }
+                }
+                break;
+            }
             case SPELLFAMILY_SHAMAN:
             {
                 // Earth Shield
@@ -2446,7 +2465,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                 {
                     if (apply)
                     {
-                        target->SetStandState(UNIT_STAND_STATE_DEAD);
+                        target->SetStandState(UNIT_STAND_STATE_SLEEP);
                         target->addUnitState(UNIT_STAT_ROOT);
                     }
                     else
@@ -2650,7 +2669,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                 else
                 {
                     // Final heal on duration end
-                    if (m_removeMode != AURA_REMOVE_BY_EXPIRE)
+                    if (m_removeMode != AURA_REMOVE_BY_EXPIRE && m_removeMode != AURA_REMOVE_BY_DISPEL)
                         return;
 
                     // final heal
@@ -2954,6 +2973,21 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
                 case FORM_DEFENSIVESTANCE:
                 case FORM_BERSERKERSTANCE:
                 {
+                    ShapeshiftForm previousForm = target->GetShapeshiftForm();
+                    uint32 ragePercent = 0;
+                    if (previousForm == FORM_DEFENSIVESTANCE)
+                    {
+                        Unit::AuraList const& auraClassScripts = target->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS);
+                        for (Unit::AuraList::const_iterator itr = auraClassScripts.begin(); itr != auraClassScripts.end();)
+                        {
+                            if ((*itr)->GetModifier()->m_miscvalue == 831)
+                            {
+                                ragePercent = (*itr)->GetModifier()->m_amount;
+                            }
+                            else
+                                ++itr;
+                        }
+                    }
                     uint32 Rage_val = 0;
                     // Stance mastery + Tactical mastery (both passive, and last have aura only in defense stance, but need apply at any stance switch)
                     if (target->GetTypeId() == TYPEID_PLAYER)
@@ -2970,7 +3004,12 @@ void Aura::HandleAuraModShapeshift(bool apply, bool Real)
                         }
                     }
 
-                    if (target->GetPower(POWER_RAGE) > Rage_val)
+                    if (ragePercent) // not zero
+                    {
+                        if (ragePercent != 100) // optimization
+                            target->SetPower(POWER_RAGE, (target->GetPower(POWER_RAGE) * ragePercent) / 100);
+                    }
+                    else if (target->GetPower(POWER_RAGE) > Rage_val)
                         target->SetPower(POWER_RAGE, Rage_val);
                     break;
                 }
@@ -4354,7 +4393,19 @@ void Aura::HandlePeriodicTriggerSpell(bool apply, bool /*Real*/)
 
     Unit* target = GetTarget();
 
-    if (!apply)
+    if (apply)
+    {
+        switch (GetId())
+        {
+            case 29946:
+                if (target->HasAura(29947))
+                    target->RemoveAurasDueToSpellByCancel(29947);
+                return;
+            default:
+                break;
+        }
+    }
+    else
     {
         switch (GetId())
         {
@@ -4373,6 +4424,11 @@ void Aura::HandlePeriodicTriggerSpell(bool apply, bool /*Real*/)
                 if (m_removeMode != AURA_REMOVE_BY_DISPEL)
                     // Cast Wrath of the Plaguebringer if not dispelled
                     target->CastSpell(target, 29214, TRIGGERED_OLD_TRIGGERED, 0, this);
+                return;
+            case 29946:
+                if (GetAuraDuration() >= 1 * IN_MILLISECONDS)
+                    // Cast "crossed flames debuff"
+                    target->CastSpell(target, 29947, TRIGGERED_OLD_TRIGGERED, nullptr, this);
                 return;
             case 35515:                                     // Salaadin's Tesla
                 if ((m_removeMode != AURA_REMOVE_BY_STACK) && (!target->HasAura(35515)))
@@ -4794,15 +4850,44 @@ void Aura::HandleAuraModStat(bool apply, bool /*Real*/)
         return;
     }
 
+    Unit* target = GetTarget();
+
+    // Holy Strength amount decrease by 4% each level after 60 From Crusader Enchant
+    if (apply && GetId() == 20007)
+        if (GetCaster()->GetTypeId() == TYPEID_PLAYER && GetCaster()->getLevel() > 60)
+            m_modifier.m_amount = int32(m_modifier.m_amount * (1 - (((float(GetCaster()->getLevel()) - 60) * 4) / 100)));
+
+    if (GetSpellProto()->IsFitToFamilyMask(0x0000000000008000))
+    {
+        if (apply)
+        {
+            int32 staminaToRemove = 0;
+            Unit::AuraList const& auraClassScripts = target->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS);
+            for (Unit::AuraList::const_iterator itr = auraClassScripts.begin(); itr != auraClassScripts.end();)
+            {
+                switch ((*itr)->GetModifier()->m_miscvalue)
+                {
+                    case 2388: staminaToRemove = m_modifier.m_amount * 10 / 100; break;
+                    case 2389: staminaToRemove = m_modifier.m_amount * 20 / 100; break;
+                    case 2390: staminaToRemove = m_modifier.m_amount * 30 / 100; break;
+                }
+            }
+            if (staminaToRemove)
+                GetCaster()->CastCustomSpell(target, 19486, &staminaToRemove, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED);
+        }
+        else
+            target->RemoveAurasTriggeredBySpell(GetId(), GetCasterGuid()); // just do it every time, lookup is too time consuming
+    }
+
     for (int32 i = STAT_STRENGTH; i < MAX_STATS; ++i)
     {
         // -1 or -2 is all stats ( misc < -2 checked in function beginning )
         if (m_modifier.m_miscvalue < 0 || m_modifier.m_miscvalue == i)
         {
             // m_target->ApplyStatMod(Stats(i), m_modifier.m_amount,apply);
-            GetTarget()->HandleStatModifier(UnitMods(UNIT_MOD_STAT_START + i), TOTAL_VALUE, float(m_modifier.m_amount), apply);
-            if (GetTarget()->GetTypeId() == TYPEID_PLAYER || ((Creature*)GetTarget())->IsPet())
-                GetTarget()->ApplyStatBuffMod(Stats(i), float(m_modifier.m_amount), apply);
+            target->HandleStatModifier(UnitMods(UNIT_MOD_STAT_START + i), TOTAL_VALUE, float(m_modifier.m_amount), apply);
+            if (target->GetTypeId() == TYPEID_PLAYER || ((Creature*)target)->IsPet())
+                target->ApplyStatBuffMod(Stats(i), float(m_modifier.m_amount), apply);
         }
     }
 }
@@ -5908,6 +5993,14 @@ void Aura::HandleSchoolAbsorb(bool apply, bool Real)
             m_modifier.m_amount += (int32)DoneActualBenefit;
         }
     }
+    else
+    {
+        if (spellProto->Id == 33810 && m_removeMode == AURA_REMOVE_BY_SHIELD_BREAK) // Rock Shell
+        {
+            caster->CastSpell(caster, 33811, TRIGGERED_OLD_TRIGGERED, nullptr, this);
+            return;
+        }
+    }
 }
 
 void Aura::PeriodicTick()
@@ -5963,6 +6056,11 @@ void Aura::PeriodicTick()
                             target->RemoveAurasDueToSpell(GetId());
                             return;
                         }
+                        break;
+                    }
+                    case 29964: // Dragons Breath
+                    {
+                        target->CastSpell(nullptr, 29965, TRIGGERED_OLD_TRIGGERED);
                         break;
                     }
                     default:
