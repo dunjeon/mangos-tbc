@@ -2368,7 +2368,7 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                     if (!item)
                         return;
 
-                    // all poison enchantments is temporary					
+                    // all poison enchantments is temporary
                     if (uint32 enchant_id = item->GetEnchantmentId(TEMP_ENCHANTMENT_SLOT))
                     {
                         SpellItemEnchantmentEntry const* pEnchant = sSpellItemEnchantmentStore.LookupEntry(enchant_id);
@@ -3321,7 +3321,7 @@ void Spell::EffectHeal(SpellEffectIndex /*eff_idx*/)
             if (m_caster->HasAura(17619)) // Alchemists stone
                 addhealth *= 1.4f; // increase healing by 40%
         }
-        else 
+        else
         {
             switch (m_spellInfo->Id)
             {
@@ -3343,10 +3343,10 @@ void Spell::EffectHeal(SpellEffectIndex /*eff_idx*/)
                             damageAmount += (*i)->GetModifier()->m_amount;
                     if (damageAmount)
                         m_caster->RemoveAurasDueToSpell(45062);
-                
+
                     addhealth += damageAmount;
                     break;
-                
+
                 }
             }
         }
@@ -5569,19 +5569,6 @@ void Spell::EffectSummonObjectWild(SpellEffectIndex eff_idx)
     m_spellLog.AddLog(uint32(SPELL_EFFECT_SUMMON_OBJECT_WILD), pGameObj->GetPackGUID());
 }
 
-static ScriptInfo generateCastSpellCommand(uint32 spellId, bool isTriggered = false)
-{
-    ScriptInfo si;
-    si.command = SCRIPT_COMMAND_CAST_SPELL;
-    si.id = 0;
-    si.castSpell.spellId = spellId;
-    si.buddyEntry = 0;
-    si.searchRadiusOrGuid = 0;
-    si.data_flags = isTriggered ? 0x08 : 0x00;
-    memset(si.textId, 0, MAX_TEXT_ID * sizeof(int32));
-    return si;
-}
-
 void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
 {
     // TODO: we must implement hunter pet summon at login there (spell 6962)
@@ -5811,15 +5798,10 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                 case 24731:                                 // Cannon Fire
                 case 42868:                                 // Fire Cannon
                 {
-                    if(!unitTarget)
+                    if (!unitTarget || m_caster->GetTypeId() != TYPEID_PLAYER)
                         return;
 
-                    static ScriptInfo activateCommand = generateCastSpellCommand(24742, true);    // Cast Magic Wings
-
-                    int32 delay_secs = 1;
-
-                    m_caster->GetMap()->ScriptCommandStart(activateCommand, delay_secs, unitTarget, m_caster);
-
+                    unitTarget->CastSpell(m_caster, m_spellInfo->Id == 24731 ? 24742 : 42867, TRIGGERED_OLD_TRIGGERED);
                     return;
                 }
                 case 24737:                                 // Ghost Costume
@@ -5832,6 +5814,7 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     return;
                 }
                 case 24742:                                 // Magic Wings
+                case 42867:                                 // Magic Wings (Terrokar Forest)
                 {
                     if(!unitTarget)
                         return;

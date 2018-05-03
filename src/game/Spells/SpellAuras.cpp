@@ -1125,6 +1125,11 @@ void Aura::TriggerSpell()
 //                    case 24379: break;
 //                    // Happy Pet
 //                    case 24716: break;
+                    case 24743:                             // Cannon Prep
+                    case 24832:                             // Cannon Prep
+                    case 42825:                             // Cannon Prep
+                        trigger_spell_id = auraId == 42825 ? 42868 : 24731;
+                        break;
                     case 24780:                             // Dream Fog
                     {
                         // Note: In 1.12 triggered spell 24781 still exists, need to script dummy effect for this spell then
@@ -6108,7 +6113,7 @@ void Aura::PeriodicTick()
             // Reduce dot damage from resilience for players
             pdamage -= target->GetDoTDamageReduction(pdamage);
 
-            target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), spellProto->HasAttribute(SPELL_ATTR_EX4_IGNORE_RESISTANCES));
+            target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), IsResistableSpell(spellProto));
 
             DETAIL_FILTER_LOG(LOG_FILTER_PERIODIC_AFFECTS, "PeriodicTick: %s attacked %s for %u dmg inflicted by %u",
                               GetCasterGuid().GetString().c_str(), target->GetGuidStr().c_str(), pdamage, GetId());
@@ -6165,7 +6170,7 @@ void Aura::PeriodicTick()
             // Reduce dot damage from resilience for players
             pdamage -= target->GetDoTDamageReduction(pdamage);
 
-            target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), spellProto->HasAttribute(SPELL_ATTR_EX4_IGNORE_RESISTANCES));
+            target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), IsResistableSpell(spellProto));
 
             if (target->GetHealth() < pdamage)
                 pdamage = uint32(target->GetHealth());
@@ -7724,13 +7729,27 @@ void SpellAuraHolder::SetAuraFlag(uint32 slot, bool add)
     uint32 index    = slot / 4;
     uint32 byte     = (slot % 4) * 8;
     uint32 val      = m_target->GetUInt32Value(UNIT_FIELD_AURAFLAGS + index);
-    val &= ~((uint32)AFLAG_MASK << byte);
+    val &= ~(uint32(AFLAG_MASK_ALL) << byte);
     if (add)
     {
-        if (IsPositive())
-            val |= ((uint32)AFLAG_POSITIVE << byte);
-        else
-            val |= ((uint32)AFLAG_NEGATIVE << byte);
+        const Unit* caster = GetCaster();
+
+        uint32 flags = AFLAG_NONE;
+        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+        {
+            if (!m_auras[i])
+                continue;
+            if ((flags & AFLAG_HARMFUL) && (flags & AFLAG_HELPFUL))
+                break;
+            flags |= (IsPositiveEffectTargetMode(m_spellProto, SpellEffectIndex(i), caster, m_target) ? AFLAG_HELPFUL : AFLAG_HARMFUL);
+        }
+
+        if (m_spellProto->HasAttribute(SPELL_ATTR_PASSIVE))
+            flags |= AFLAG_PASSIVE_DEPRECATED;
+
+        flags |= ((IsPositive() && !m_spellProto->HasAttribute(SPELL_ATTR_CANT_CANCEL)) ? AFLAG_CANCELABLE : AFLAG_NOT_CANCELABLE);
+
+        val |= (flags << byte);
     }
     m_target->SetUInt32Value(UNIT_FIELD_AURAFLAGS + index, val);
 }
