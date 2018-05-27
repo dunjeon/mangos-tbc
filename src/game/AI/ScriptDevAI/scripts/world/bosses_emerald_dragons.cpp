@@ -16,8 +16,8 @@
 
 /* ScriptData
 SDName: bosses_emerald_dragons
-SD%Complete: 95
-SDComment: Correct models used by Spirit Shade for each race/gender combination are missing (Lethon) / Demented Druid Spirit summon needs improvement (Ysondre) / Player summon NYI
+SD%Complete: 98
+SDComment: Correct models used by Spirit Shade for each race/gender combination are missing (Lethon) / Player summon NYI
 SDCategory: Emerald Dragon Bosses
 EndScriptData */
 
@@ -147,6 +147,7 @@ enum
     SPELL_VOLATILE_INFECTION    = 24928,
     SPELL_CORRUPTION_OF_EARTH   = 24910,
     SPELL_PUTRID_MUSHROOM       = 24904,                    // Summons a Putrid Mushroom (GO 180517 with trap spell 24871) on killing a player
+    SPELL_DESPAWN_MUSHROOMS     = 24958,                    // Removes all Putrid Mushrooms in case of raid wipe
 };
 
 struct boss_emerissAI : public boss_emerald_dragonAI
@@ -160,6 +161,7 @@ struct boss_emerissAI : public boss_emerald_dragonAI
         boss_emerald_dragonAI::Reset();
 
         m_uiVolatileInfectionTimer = 12000;
+        DoCastSpellIfCan(m_creature, SPELL_DESPAWN_MUSHROOMS, CAST_TRIGGERED);
     }
 
     void Aggro(Unit* /*pWho*/) override
@@ -238,7 +240,7 @@ struct boss_lethonAI : public boss_emerald_dragonAI
     void Aggro(Unit* /*pWho*/) override
     {
         DoScriptText(SAY_LETHON_AGGRO, m_creature);
-        // Shadow bolt wirl is a periodic aura which triggers a set of shadowbolts every 2 secs; may need some core tunning
+        // Shadow bolt wirl is a periodic aura which triggers a set of shadowbolts every 2 secs
         DoCastSpellIfCan(m_creature, SPELL_SHADOW_BOLT_WIRL, CAST_TRIGGERED);
     }
 
@@ -455,7 +457,7 @@ enum
     SAY_SUMMON_DRUIDS       = -1000361,
 
     SPELL_LIGHTNING_WAVE    = 24819,
-    SPELL_SUMMON_DRUIDS     = 24795,    // Summon NPC 15260 (Demented Druid Spirit) that uses spells 6726, 16247 & 24957
+    SPELL_SUMMON_DRUIDS     = 24796,    // Summon NPC 15260 (Demented Druid Spirit) that uses spells 6726, 16247 & 24957
 };
 
 // Ysondre script
@@ -477,15 +479,16 @@ struct boss_ysondreAI : public boss_emerald_dragonAI
         DoScriptText(SAY_YSONDRE_AGGRO, m_creature);
     }
 
-    // Summon Druids - TODO FIXME (spell not understood)
+    // Summon Druids, one druid per player engaged in combat (actual summon handled in child spell 24795)
     bool DoSpecialDragonAbility()
     {
-        DoScriptText(SAY_SUMMON_DRUIDS, m_creature);
+        if (DoCastSpellIfCan(m_creature, SPELL_SUMMON_DRUIDS, CAST_TRIGGERED) == CAST_OK)
+        {
+            DoScriptText(SAY_SUMMON_DRUIDS, m_creature);
+            return true;
+        }
 
-        for (int i = 0; i < 10; ++i)
-            DoCastSpellIfCan(m_creature, SPELL_SUMMON_DRUIDS, CAST_TRIGGERED);
-
-        return true;
+        return false;
     }
 
     bool UpdateDragonAI(const uint32 uiDiff)
