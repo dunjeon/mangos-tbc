@@ -332,8 +332,19 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
 
             if (isSpawned())
             {
-                // traps can have time and can not have
+                // Check if all charges were consumed
                 GameObjectInfo const* goInfo = GetGOInfo();
+                if (uint32 max_charges = goInfo->GetCharges())
+                {
+                    if (m_useTimes >= max_charges)
+                    {
+                        m_useTimes = 0;
+                        SetLootState(GO_JUST_DEACTIVATED);  // can be despawned or destroyed
+                        break;
+                    }
+                }
+
+                // Handle traps cooldown
                 if (goInfo->type == GAMEOBJECT_TYPE_TRAP)   // traps
                 {
                     if (m_cooldownTime >= time(nullptr))
@@ -392,18 +403,9 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
                             }
                         }
                     }
-                    
+
                     if (target && (!goInfo->trapCustom.triggerOn || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))) // do not trigger on hostile traps if not selectable
                         Use(target);
-                }
-
-                if (uint32 max_charges = goInfo->GetCharges())
-                {
-                    if (m_useTimes >= max_charges)
-                    {
-                        m_useTimes = 0;
-                        SetLootState(GO_JUST_DEACTIVATED);  // can be despawned or destroyed
-                    }
                 }
             }
             break;
@@ -860,7 +862,7 @@ bool GameObject::isVisibleForInState(Player const* u, WorldObject const* viewPoi
                     Player* ownerPlayer = (Player*)owner;
                     if ((GetMap()->IsBattleGroundOrArena() && ownerPlayer->GetBGTeam() != u->GetBGTeam()) ||
                             (ownerPlayer->IsInDuelWith(u)) ||
-                            (!ownerPlayer->IsInSameRaidWith(u)))
+                            (!ownerPlayer->IsInGroup(u)))
                         trapNotVisible = true;
                 }
                 else
@@ -1532,7 +1534,7 @@ void GameObject::Use(Unit* user)
                     return;
 
                 // accept only use by player from same group as owner, excluding owner itself (unique use already added in spell effect)
-                if (player == (Player*)owner || (info->summoningRitual.castersGrouped && !player->IsInSameRaidWith(((Player*)owner))))
+                if (player == (Player*)owner || (info->summoningRitual.castersGrouped && !player->IsInGroup(owner)))
                     return;
 
                 // expect owner to already be channeling, so if not...
@@ -1581,7 +1583,7 @@ void GameObject::Use(Unit* user)
                 if (!caster || caster->GetTypeId() != TYPEID_PLAYER)
                     return;
 
-                if (user->GetTypeId() != TYPEID_PLAYER || !((Player*)user)->IsInSameRaidWith((Player*)caster))
+                if (user->GetTypeId() != TYPEID_PLAYER || !user->IsInGroup(caster))
                     return;
             }
 
@@ -1608,7 +1610,7 @@ void GameObject::Use(Unit* user)
             Player* targetPlayer = ObjectAccessor::FindPlayer(player->GetSelectionGuid());
 
             // accept only use by player from same group for caster except caster itself
-            if (!targetPlayer || targetPlayer == player || !targetPlayer->IsInSameRaidWith(player))
+            if (!targetPlayer || targetPlayer == player || !targetPlayer->IsInGroup(player))
                 return;
 
             // required lvl checks!

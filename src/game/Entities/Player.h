@@ -1270,6 +1270,7 @@ class Player : public Unit
 
         void FailQuest(uint32 quest_id);
         void FailQuest(Quest const* quest);
+        void FailQuestForGroup(uint32 questId);
         void FailQuestsOnDeath();
         bool SatisfyQuestSkill(Quest const* qInfo, bool msg) const;
         bool SatisfyQuestCondition(Quest const* qInfo, bool msg) const;
@@ -1586,9 +1587,6 @@ class Player : public Unit
         void DuelComplete(DuelCompleteType type);
         void SendDuelCountdown(uint32 counter) const;
 
-        bool IsGroupVisibleFor(Player* p) const;
-        bool IsInSameGroupWith(Player const* p) const;
-        bool IsInSameRaidWith(Player const* p) const { return p == this || (GetGroup() != nullptr && GetGroup() == p->GetGroup()); }
         void UninviteFromGroup();
         static void RemoveFromGroup(Group* group, ObjectGuid guid);
         void RemoveFromGroup() { RemoveFromGroup(GetGroup(), GetObjectGuid()); }

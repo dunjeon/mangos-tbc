@@ -2186,7 +2186,7 @@ struct SetGameMasterOnHelper
     void operator()(Unit* unit) const
     {
         unit->setFaction(35);
-        unit->getHostileRefManager().setOnlineOfflineState(false);
+        unit->getHostileRefManager().updateOnlineOfflineState(false);
     }
 };
 
@@ -2196,7 +2196,7 @@ struct SetGameMasterOffHelper
     void operator()(Unit* unit) const
     {
         unit->setFaction(faction);
-        unit->getHostileRefManager().setOnlineOfflineState(true);
+        unit->getHostileRefManager().updateOnlineOfflineState(true);
     }
     uint32 faction;
 };
@@ -2216,7 +2216,7 @@ void Player::SetGameMaster(bool on)
         SetPvPFreeForAll(false);
         UpdatePvPContested(false, true);
 
-        getHostileRefManager().setOnlineOfflineState(false);
+        getHostileRefManager().deleteReferences();
         CombatStopWithPets();
     }
     else
@@ -2235,8 +2235,6 @@ void Player::SetGameMaster(bool on)
 
         // restore FFA PvP area state, remove not allowed for GM mounts
         UpdateArea(m_areaUpdateId);
-
-        getHostileRefManager().setOnlineOfflineState(true);
     }
 
     m_camera.UpdateVisibilityForOwner();
@@ -2267,22 +2265,6 @@ void Player::SetGMVisible(bool on)
 
         SetVisibility(VISIBILITY_OFF);
     }
-}
-
-bool Player::IsGroupVisibleFor(Player* p) const
-{
-    switch (sWorld.getConfig(CONFIG_UINT32_GROUP_VISIBILITY))
-    {
-        default: return IsInSameGroupWith(p);
-        case 1:  return IsInSameRaidWith(p);
-        case 2:  return GetTeam() == p->GetTeam();
-    }
-}
-
-bool Player::IsInSameGroupWith(Player const* p) const
-{
-    return (p == this || (GetGroup() != nullptr &&
-                          GetGroup()->SameSubGroup(this, p)));
 }
 
 ///- If the player is invited, remove him. If the group if then only 1 person, disband the group.
@@ -6154,7 +6136,7 @@ int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 
 
     int32 result = int32(sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_GAIN) * rep * percent / 100.0f);
 
-    if (result && maxRep && faction)
+    if (source == REPUTATION_SOURCE_QUEST && result && faction)
     {
         if (FactionEntry const* factionEntry = sFactionStore.LookupEntry(faction))
         {
@@ -6189,7 +6171,7 @@ void Player::RewardReputation(Unit* pVictim, float rate)
 
     if (Rep->repfaction1 && (!Rep->team_dependent || GetTeam() == ALLIANCE))
     {
-        int32 donerep1 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue1, Rep->repfaction1, pVictim->getLevel());
+        int32 donerep1 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue1, 0, Rep->repfaction1, pVictim->getLevel());
         donerep1 = int32(donerep1 * rate);
         FactionEntry const* factionEntry1 = sFactionStore.LookupEntry(Rep->repfaction1);
         uint32 current_reputation_rank1 = GetReputationMgr().GetRank(factionEntry1);
@@ -6207,7 +6189,7 @@ void Player::RewardReputation(Unit* pVictim, float rate)
 
     if (Rep->repfaction2 && (!Rep->team_dependent || GetTeam() == HORDE))
     {
-        int32 donerep2 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue2, Rep->repfaction2, pVictim->getLevel());
+        int32 donerep2 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue2, 0, Rep->repfaction2, pVictim->getLevel());
         donerep2 = int32(donerep2 * rate);
         FactionEntry const* factionEntry2 = sFactionStore.LookupEntry(Rep->repfaction2);
         uint32 current_reputation_rank2 = GetReputationMgr().GetRank(factionEntry2);
@@ -12991,6 +12973,26 @@ void Player::RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver,
     SendQuestGiverStatusMultiple();
 }
 
+void Player::FailQuestForGroup(uint32 questId)
+{
+    if (Group* group = GetGroup())
+    {
+        for (GroupReference* ref = group->GetFirstMember(); ref != nullptr; ref = ref->next())
+        {
+            if (Player* member = ref->getSource())
+            {
+                if (member->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+                    member->FailQuest(questId);
+            }
+        }
+    }
+    else
+    {
+        if (GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+            FailQuest(questId);
+    }
+}
+
 void Player::FailQuest(uint32 questId)
 {
     if (Quest const* quest = sObjectMgr.GetQuestTemplate(questId))
@@ -16256,7 +16258,7 @@ void Player::_SaveAuras()
         // save singleTarget auras if self cast.
         bool selfCastHolder = holder->GetCasterGuid() == GetObjectGuid();
         TrackedAuraType trackedType = holder->GetTrackedAuraType();
-        if (!holder->IsPassive() && !IsChanneledSpell(holder->GetSpellProto()) &&
+        if (!holder->IsPassive() && !IsChanneledSpell(holder->GetSpellProto()) && !IsItemAura(holder->GetSpellProto()) &&
                 (trackedType == TRACK_AURA_TYPE_NOT_TRACKED || (trackedType == TRACK_AURA_TYPE_SINGLE_TARGET && selfCastHolder)))
         {
             int32  damage[MAX_EFFECT_INDEX];
@@ -17774,7 +17776,7 @@ void Player::OnTaxiFlightSplineStart(const TaxiPathNodeEntry* node)
     if (const TaxiPathEntry* path = sTaxiPathStore.LookupEntry(node->path))
         Mount(m_taxiTracker.GetMountDisplayId());
 
-    getHostileRefManager().setOnlineOfflineState(false);
+    getHostileRefManager().updateOnlineOfflineState(false);
 
     // Bugcheck: container continuity error
     MANGOS_ASSERT(m_taxiTracker.SetState(Taxi::TRACKER_FLIGHT));
@@ -17784,7 +17786,7 @@ void Player::OnTaxiFlightSplineEnd()
 {
     Unmount();
 
-    getHostileRefManager().setOnlineOfflineState(true);
+    getHostileRefManager().updateOnlineOfflineState(true);
 
     // Note: only gets set by itself when container does not end up empty
     m_taxiTracker.SetState(Taxi::TRACKER_TRANSFER);
@@ -18561,7 +18563,7 @@ bool Player::IsVisibleInGridForPlayer(Player* pl) const
         return true;
 
     // player see dead player/ghost from own group/raid
-    if (IsInSameRaidWith(pl))
+    if (IsInGroup(pl))
         return true;
 
     // Live player see live player or dead player with not realized corpse
@@ -21124,6 +21126,17 @@ void Player::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* item
             data << GetObjectGuid();
             SendDirectMessage(data);
             sLog.outDebug("Sending SMSG_COOLDOWN_EVENT with spell id = %u", spellEntry.Id);
+        }
+
+        if (spellEntry.AttributesServerside & SPELL_ATTR_SS_SEND_COOLDOWN)
+        {
+            // send to client
+            WorldPacket data(SMSG_SPELL_COOLDOWN, 8 + 1 + 4);
+            data << GetObjectGuid();
+            data << uint8(1);
+            data << uint32(spellEntry.Id);
+            data << uint32(recTime);
+            GetSession()->SendPacket(data);
         }
     }
 }

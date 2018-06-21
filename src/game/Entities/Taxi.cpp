@@ -155,7 +155,9 @@ bool Tracker::AddRoute(DestID start, DestID end, float discountMulti /*= 0.0f*/,
     if (requireModel && !displayId)
         return false;
 
-    m_displayId = displayId;
+    // Use first route's mount appearance for the entirety of the flight
+    if (!m_displayId)
+        m_displayId = displayId;
 
     if (commercial)
     {
@@ -399,9 +401,10 @@ bool Tracker::Trim(Route& first, Route& second)
         // Linear complexity for better performance
         const TaxiPathNodeEntry* last1 = nullptr;
         const TaxiPathNodeEntry* last2 = nullptr;
-        const double refdistsq = double(64.0f * 64.0f);
+        const double refdistsq = double(48.0f * 48.0f);
+        auto i1 = (waypoints1.rbegin() + lengthLanding);
         auto i2 = (waypoints2.begin() + lengthTakeoff);
-        for (auto i1 = (waypoints1.rbegin() - lengthLanding); (i1 != waypoints1.rend() && i2 != waypoints2.end()); ++i1)
+        for (; (i1 != waypoints1.rend() && i2 != waypoints2.end()); (++i1, ++i2))
         {
             // Verify that both paths are on the same map
             if ((*i1)->mapid != (*i2)->mapid)
@@ -421,7 +424,6 @@ bool Tracker::Trim(Route& first, Route& second)
             }
             last1 = (*i1);
             last2 = (*i2);
-            ++i2;
         }
     }
     return false;

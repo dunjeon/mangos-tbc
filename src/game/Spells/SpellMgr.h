@@ -370,6 +370,7 @@ inline bool IsSpellRemovedOnEvade(SpellEntry const* spellInfo)
     switch (spellInfo->Id)
     {
         case 32007:         // Mo'arg Engineer Transform Visual
+        case 35596:         // Power of the Legion
         case 39311:         // Scrapped Fel Reaver transform aura that is never removed even on evade
         case 39918:         // visual auras in Soulgrinder script
         case 39920:
@@ -503,7 +504,7 @@ inline bool IsCasterSourceTarget(uint32 target)
         case TARGET_TOTEM_AIR:
         case TARGET_TOTEM_FIRE:
         case TARGET_AREAEFFECT_GO_AROUND_DEST:
-        case TARGET_SELF2:
+        case TARGET_DEST_DESTINATION:
         case TARGET_NONCOMBAT_PET:
             return true;
         default:
@@ -659,7 +660,7 @@ inline bool IsOnlySelfTargeting(SpellEntry const* spellInfo)
         switch (spellInfo->EffectImplicitTargetA[i])
         {
             case TARGET_SELF:
-            case TARGET_SELF2:
+            case TARGET_DEST_DESTINATION:
                 break;
             default:
                 return false;
@@ -667,7 +668,7 @@ inline bool IsOnlySelfTargeting(SpellEntry const* spellInfo)
         switch (spellInfo->EffectImplicitTargetB[i])
         {
             case TARGET_SELF:
-            case TARGET_SELF2:
+            case TARGET_DEST_DESTINATION:
             case TARGET_NONE:
                 break;
             default:
@@ -776,7 +777,7 @@ inline bool IsFriendlyTarget(uint32 target)
         case TARGET_SINGLE_FRIEND_2:
         case TARGET_FRIENDLY_FRONTAL_CONE:
         case TARGET_AREAEFFECT_PARTY_AND_CLASS:
-        case TARGET_SELF2:
+        case TARGET_DEST_DESTINATION:
         case TARGET_NONCOMBAT_PET:
             return true;
         default:
@@ -915,15 +916,17 @@ inline bool IsPositiveEffect(const SpellEntry* spellproto, SpellEffectIndex effI
         case 42867:
         case 34786: // Temporal Analysis - factions and unitflags of target/caster verified, should not incur combat
         case 39384: // Fury Of Medivh visual - Burning Flames - Fury of medivh is friendly to all, and it hits all chess pieces, basically friendly fire damage
+        case 37277: // Summon Infernal - neutral spell with TARGET_DUELVSPLAYER which evaluates as hostile due to neutral factions, with delay and gets removed by !IsPositiveSpell check
+        case 42399: // Neutral spell with TARGET_DUELVSPLAYER, caster faction 14, target faction 14, evaluates as negative spell
+                    // because of POS/NEG decision, should in fact be NEUTRAL decision TODO: Increase check fidelity
             return true;
         case 34190: // Arcane Orb - should be negative
             /*34172 is cast onto friendly target, and fails bcs its delayed and we remove negative delayed on friendlies due to Duel code, if we change target pos code
             bcs 34190 will be evaled as neg, 34172 will be evaled as neg, and hence be removed cos its negative delayed on a friendly*/
+        case 35941: // Gravity Lapse - Neutral spell with TARGET_ONLY_PLAYER attribute, should hit all players in the room
+        case 39495: // Remove Tainted Cores
+        case 39497: // Remove Enchanted Weapons - both should hit all players in zone with the given items, uses a neutral target type
             return false;
-        case 37277: // Summon Infernal - neutral spell with TARGET_DUELVSPLAYER which evaluates as hostile due to neutral factions, with delay and gets removed by !IsPositiveSpell check
-        case 42399: // Neutral spell with TARGET_DUELVSPLAYER, caster faction 14, target faction 14, evaluates as negative spell
-            // because of POS/NEG decision, should in fact be NEUTRAL decision TODO: Increase check fidelity
-            return true;
     }
 
     switch (spellproto->Effect[effIndex])
@@ -1186,12 +1189,13 @@ inline uint32 GetAffectedTargets(SpellEntry const* spellInfo)
                 case 804:                                   // Explode Bug (AQ40, Emperor Vek'lor)
                 case 23138:                                 // Gate of Shazzrah (MC, Shazzrah)
                 case 23173:                                 // Brood Affliction (BWL, Chromaggus)
+                case 24019:                                 // Axe Flurry (ZG - Gurubashi Axe Thrower)
                 case 24150:                                 // Stinger Charge Primer (AQ20, Hive'Zara Stinger)
                 case 24781:                                 // Dream Fog (Emerald Dragons)
                 case 26080:                                 // Stinger Charge Primer (AQ40, Vekniss Stinger)
+                case 26524:                                 // Sand Trap (AQ20 - Kurinnaxx)
                 case 28560:                                 // Summon Blizzard (Naxx, Sapphiron)
                 case 30541:                                 // Blaze (Magtheridon)
-                case 30572:                                 // Quake (Magtheridon)
                 case 30769:                                 // Pick Red Riding Hood (Karazhan, Big Bad Wolf)
                 case 30835:                                 // Infernal Relay (Karazhan, Prince Malchezaar)
                 case 31347:                                 // Doom (Hyjal Summit, Azgalor)
@@ -1312,6 +1316,18 @@ inline bool IsIgnoreLosSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex
 inline bool IsIgnoreLosSpellCast(SpellEntry const* spellInfo)
 {
     return spellInfo->rangeIndex == 13 || IsIgnoreLosSpell(spellInfo);
+}
+
+// applied when item is received/looted/equipped
+inline bool IsItemAura(SpellEntry const* spellInfo)
+{
+    switch (spellInfo->Id)
+    {
+        case 38132:
+            return true;
+        default:
+            return false;
+    }
 }
 
 inline bool NeedsComboPoints(SpellEntry const* spellInfo)

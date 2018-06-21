@@ -743,7 +743,7 @@ class Creature : public Unit
         void RemoveCorpse(bool inPlace = false);
         bool IsDeadByDefault() const { return m_isDeadByDefault; };
 
-        void ForcedDespawn(uint32 timeMSToDespawn = 0);
+        void ForcedDespawn(uint32 timeMSToDespawn = 0, bool onlyAlive = false);
 
         time_t const& GetRespawnTime() const { return m_respawnTime; }
         time_t GetRespawnTimeEx() const;
@@ -802,10 +802,18 @@ class Creature : public Unit
         void SetVirtualItem(VirtualItemSlot slot, uint32 item_id);
         void SetVirtualItemRaw(VirtualItemSlot slot, uint32 display_id, uint32 info0, uint32 info1);
 
+        void SetInvisible(bool invisible) { m_isInvisible = invisible; }
+        bool IsInvisible() const { return m_isInvisible; }
+
+        void SetIgnoreMMAP(bool ignore) { m_ignoreMMAP = ignore; }
+        bool IsIgnoringMMAP() const { return m_ignoreMMAP; }
+
         void OnEventHappened(uint16 eventId, bool activate, bool resume) override { return AI()->OnEventHappened(eventId, activate, resume); }
 
         void SetIgnoreRangedTargets(bool state) { m_ignoreRangedTargets = state; }
         bool IsIgnoringRangedTargets() override { return m_ignoreRangedTargets; }
+
+        void SetSpawnCounting(bool state) { m_countSpawns = state; }
 
         uint32 GetDetectionRange() const override { return m_creatureInfo->Detection; }
     protected:
@@ -850,6 +858,8 @@ class Creature : public Unit
         Position m_respawnPos;
 
         std::unique_ptr<CreatureAI> m_ai;
+        bool m_isInvisible;
+        bool m_ignoreMMAP;
 
         uint32 m_gameEventVendorId;                         // game event creature data vendor id override
 
@@ -858,6 +868,7 @@ class Creature : public Unit
 
         // Script logic
         bool m_ignoreRangedTargets;                         // Ignores ranged targets when picking someone to attack
+        bool m_countSpawns;
 
     private:
         GridReference<Creature> m_gridRef;
@@ -867,11 +878,12 @@ class Creature : public Unit
 class ForcedDespawnDelayEvent : public BasicEvent
 {
     public:
-        ForcedDespawnDelayEvent(Creature& owner) : BasicEvent(), m_owner(owner) { }
+        ForcedDespawnDelayEvent(Creature& owner, bool onlyAlive = false) : BasicEvent(), m_owner(owner), m_onlyAlive(onlyAlive) { }
         bool Execute(uint64 e_time, uint32 p_time) override;
 
     private:
         Creature& m_owner;
+        bool m_onlyAlive;
 };
 
 #endif

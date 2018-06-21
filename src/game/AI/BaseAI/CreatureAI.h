@@ -147,6 +147,11 @@ class CreatureAI
         virtual void JustReachedHome() {}
 
         /**
+        * Called at reaching home after MoveTargetedHome
+        */
+        virtual void SummonedJustReachedHome(Creature* summoned) {}
+
+        /**
          * Called at any Heal received from any Unit
          * @param pHealer Unit* which deals the heal
          * @param uiHealedAmount Amount of healing received
@@ -231,6 +236,7 @@ class CreatureAI
          * @param pTarget Target that we hit with the spell
          * @param pSpell Spell with which we hit pTarget
          */
+        virtual void SpellHitTarget(Unit* target, const SpellEntry* spellInfo, SpellMissInfo missInfo) { SpellHitTarget(target, spellInfo); }
         virtual void SpellHitTarget(Unit* /*target*/, const SpellEntry* /*spellInfo*/) {}
 
         /**
@@ -373,6 +379,12 @@ class CreatureAI
         virtual bool AssistPlayerInCombat(Unit* who) { return false; }
 
         /*
+        * Called when a spell is interrupted
+        * @param spellInfo to specify which spell was interrupted
+        */
+        virtual void OnSpellInterrupt(SpellEntry const* spellInfo) {}
+
+        /*
         * Notifies AI on channel state update
         */
         virtual void OnChannelStateChange(SpellEntry const* spellInfo, bool state, WorldObject* target = nullptr);
@@ -387,6 +399,8 @@ class CreatureAI
 
         // Returns friendly unit with the most amount of hp missing from max hp
         Unit* DoSelectLowestHpFriendly(float range, float minMissing = 1.f, bool percent = false);
+
+        void DoFakeDeath(uint32 spellId = 0);
 
         void SetReactState(ReactStates st) { m_reactState = st; }
         ReactStates GetReactState() const { return m_reactState; }

@@ -498,6 +498,12 @@ enum SpellAttributesEx6
     SPELL_ATTR_EX6_UNK31                       = 0x80000000,// 31 not set in 3.0.3
 };
 
+enum SpellAttributesServerside
+{
+    SPELL_ATTR_SS_PREVENT_INVIS                = 0x00000001,
+    SPELL_ATTR_SS_SEND_COOLDOWN                = 0x00000002,
+};
+
 enum SheathTypes
 {
     SHEATHETYPE_NONE                   = 0,
@@ -1128,7 +1134,7 @@ enum Targets
     TARGET_POINT_AT_SE                 = 84,                // from spell desc: "(SE)"
     TARGET_POINT_AT_SW                 = 85,                // from spell desc: "(SW)"
     TARGET_RANDOM_NEARBY_DEST          = 86,                // "Test Nearby Dest Random" - random around selected destination
-    TARGET_SELF2                       = 87,
+    TARGET_DEST_DESTINATION            = 87,
     TARGET_88                          = 88,                // Smoke Flare(s)
     TARGET_NONCOMBAT_PET               = 90,
 };

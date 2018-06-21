@@ -66,7 +66,7 @@ enum SpellChannelInterruptFlags
 
 enum SpellAuraInterruptFlags
 {
-    AURA_INTERRUPT_FLAG_UNK0                        = 0x00000001,   // 0    removed when getting hit by a negative spell?
+    AURA_INTERRUPT_FLAG_HITBYSPELL                  = 0x00000001,   // 0    removed when getting hit by a negative spell
     AURA_INTERRUPT_FLAG_DAMAGE                      = 0x00000002,   // 1    removed by any damage
     AURA_INTERRUPT_FLAG_UNK2                        = 0x00000004,   // 2
     AURA_INTERRUPT_FLAG_MOVE                        = 0x00000008,   // 3    removed by any movement
@@ -214,7 +214,7 @@ enum UnitRename
 
 // byte flags value (UNIT_FIELD_BYTES_2,3)                  See enum ShapeshiftForm in SharedDefines.h
 
-#define CREATURE_MAX_SPELLS     4
+#define CREATURE_MAX_SPELLS     8
 
 enum Swing
 {
@@ -274,7 +274,7 @@ class Totem;
 struct SpellImmune
 {
     uint32 type;
-    uint32 spellId;
+    Aura const* aura;
 };
 
 typedef std::list<SpellImmune> SpellImmuneList;
@@ -479,6 +479,8 @@ enum UnitMoveType
 };
 
 #define MAX_MOVE_TYPE     8
+
+#define BASE_CHARGE_SPEED 27.0f
 
 enum CombatRating
 {
@@ -1035,7 +1037,7 @@ struct CharmInfo
         void InitEmptyActionBar();
 
         // return true if successful
-        bool AddSpellToActionBar(uint32 spellId, ActiveStates newstate = ACT_DECIDE);
+        bool AddSpellToActionBar(uint32 spellid, ActiveStates newstate = ACT_DECIDE, uint8 forceSlot = 255);
         bool RemoveSpellFromActionBar(uint32 spell_id);
         void LoadPetActionBar(const std::string& data);
         void BuildActionBar(WorldPacket& data) const;
@@ -1435,16 +1437,24 @@ class Unit : public WorldObject
 
         bool IsCivilianForTarget(Unit const* pov) const;
 
-        bool IsImmuneToNPC() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC); }
-        void SetImmuneToNPC(bool state);
-        bool IsImmuneToPlayer() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER); }
-        void SetImmuneToPlayer(bool state);
+        bool IsInGroup(Unit const* other, bool party = false, bool UI = false) const;
+        bool IsInParty(Unit const* other, bool UI = false) const { return IsInGroup(other, true, UI); }
 
         // extensions of CanAttack and CanAssist API needed serverside
         virtual bool CanAttackSpell(Unit* target, SpellEntry const* spellInfo = nullptr, bool isAOE = false) const override;
         virtual bool CanAssistSpell(Unit* target, SpellEntry const* spellInfo = nullptr) const override;
 
         virtual bool CanAttackOnSight(Unit* target); // Used in MoveInLineOfSight checks
+
+        // Serverside fog of war settings
+        bool IsFogOfWarVisibleStealth(Unit const* other) const;
+        bool IsFogOfWarVisibleHealth(Unit const* other) const;
+        bool IsFogOfWarVisibleStats(Unit const* other) const;
+
+        bool IsImmuneToNPC() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_NPC); }
+        void SetImmuneToNPC(bool state);
+        bool IsImmuneToPlayer() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER); }
+        void SetImmuneToPlayer(bool state);
 
         bool IsPvP() const { return HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PVP); }
         void SetPvP(bool state);
@@ -1723,6 +1733,7 @@ class Unit : public WorldObject
         void SendSpellNonMeleeDamageLog(Unit* target, uint32 SpellID, uint32 Damage, SpellSchoolMask damageSchoolMask, uint32 AbsorbedDamage, uint32 Resist, bool PhysicalDamage, uint32 Blocked, bool CriticalHit = false);
         void SendPeriodicAuraLog(SpellPeriodicAuraLogInfo* pInfo) const;
         void SendSpellMiss(Unit* target, uint32 spellID, SpellMissInfo missInfo) const;
+        void CasterHitTargetWithSpell(Unit* realCaster, Unit* target, SpellEntry const* spellInfo);
 
         void NearTeleportTo(float x, float y, float z, float orientation, bool casting = false);
         void MonsterMoveWithSpeed(float x, float y, float z, float speed, bool generatePath = false, bool forceDestination = false);
@@ -1859,6 +1870,7 @@ class Unit : public WorldObject
         void RemoveAurasAtMechanicImmunity(uint32 mechMask, uint32 exceptSpellId, bool non_positive = false);
         void RemoveSpellsCausingAura(AuraType auraType);
         void RemoveSpellsCausingAura(AuraType auraType, SpellAuraHolder* except);
+        void RemoveSpellsCausingAura(AuraType auraType, SpellAuraHolder* except, bool onlyNegative);
         void RemoveSpellsCausingAura(AuraType auraType, ObjectGuid casterGuid);
         void RemoveRankAurasDueToSpell(uint32 spellId);
         bool RemoveNoStackAurasDueToAuraHolder(SpellAuraHolder* holder);
@@ -2129,8 +2141,8 @@ class Unit : public WorldObject
 
         void SetContestedPvP(Player* attackedPlayer = nullptr);
 
-        void ApplySpellImmune(uint32 spellId, uint32 op, uint32 type, bool apply);
-        void ApplySpellDispelImmunity(const SpellEntry* spellProto, DispelType type, bool apply);
+        void ApplySpellImmune(Aura const* aura, uint32 op, uint32 type, bool apply);
+        void ApplySpellDispelImmunity(Aura const* aura, DispelType type, bool apply);
         virtual bool IsImmuneToSpell(SpellEntry const* spellInfo, bool castOnSelf);
         virtual bool IsImmuneToDamage(SpellSchoolMask meleeSchoolMask);
         virtual bool IsImmuneToSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex index, bool castOnSelf) const;
@@ -2260,6 +2272,8 @@ class Unit : public WorldObject
 
         virtual CreatureAI* AI() { return nullptr; }
         virtual CombatData* GetCombatData() { return m_combatData; }
+
+        virtual void AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0) override;
 
     protected:
         explicit Unit();
@@ -2509,11 +2523,13 @@ bool Unit::CheckAllControlledUnits(Func const& func, uint32 controlledMask) cons
 struct TargetDistanceOrderNear : public std::binary_function<Unit const, Unit const, bool>
 {
     Unit const* m_mainTarget;
-    TargetDistanceOrderNear(Unit const* target) : m_mainTarget(target) {}
+    DistanceCalculation m_distcalc;
+
+    TargetDistanceOrderNear(Unit const* target, DistanceCalculation distcalc = DIST_CALC_NONE) : m_mainTarget(target), m_distcalc(distcalc) {}
     // functor for operator ">"
     bool operator()(Unit const* _Left, Unit const* _Right) const
     {
-        return m_mainTarget->GetDistanceOrder(_Left, _Right);
+        return m_mainTarget->GetDistanceOrder(_Left, _Right, m_distcalc);
     }
 };
 
@@ -2522,23 +2538,26 @@ struct TargetDistanceOrderNear : public std::binary_function<Unit const, Unit co
 struct TargetDistanceOrderFarAway : public std::binary_function<Unit const, Unit const, bool>
 {
     Unit const* m_mainTarget;
-    TargetDistanceOrderFarAway(Unit const* target) : m_mainTarget(target) {}
+    DistanceCalculation m_distcalc;
+    TargetDistanceOrderFarAway(Unit const* target, DistanceCalculation distcalc = DIST_CALC_NONE) : m_mainTarget(target), m_distcalc(distcalc) {}
     // functor for operator "<"
     bool operator()(Unit const* _Left, Unit const* _Right) const
     {
-        return !m_mainTarget->GetDistanceOrder(_Left, _Right);
+        return !m_mainTarget->GetDistanceOrder(_Left, _Right, m_distcalc);
     }
 };
 
 struct LowestHPNearestOrder : public std::binary_function<Unit const, Unit const, bool>
 {
     Unit const* m_mainTarget;
-    LowestHPNearestOrder(Unit const* target) : m_mainTarget(target) {}
+    DistanceCalculation m_distcalc;
+
+    LowestHPNearestOrder(Unit const* target, DistanceCalculation distcalc = DIST_CALC_NONE) : m_mainTarget(target), m_distcalc(distcalc) {}
     // functor for operator ">"
     bool operator()(Unit const* _Left, Unit const* _Right) const
     {
         if (_Left->GetHealthPercent() == _Right->GetHealthPercent())
-            return m_mainTarget->GetDistanceOrder(_Left, _Right);
+            return m_mainTarget->GetDistanceOrder(_Left, _Right, m_distcalc);
         else
             return _Left->GetHealthPercent() < _Right->GetHealthPercent();
     }

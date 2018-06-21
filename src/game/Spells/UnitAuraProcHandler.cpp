@@ -1481,6 +1481,9 @@ SpellAuraProcResult Unit::HandleDummyAuraProc(Unit* pVictim, uint32 damage, Aura
                         triggered_spell_id = 25504;
                     }
 
+                    if (cooldown && !IsSpellReady(triggered_spell_id))
+                        return SPELL_AURA_PROC_FAILED;
+
                     // apply cooldown before cast to prevent processing itself
                     if (cooldown)
                         AddCooldown(*dummySpell, nullptr, false, cooldown * IN_MILLISECONDS);
@@ -2275,9 +2278,9 @@ SpellAuraProcResult Unit::HandleProcTriggerSpellAuraProc(Unit* pVictim, uint32 d
                         basepoints[EFFECT_INDEX_0] ? &basepoints[EFFECT_INDEX_0] : nullptr,
                         basepoints[EFFECT_INDEX_1] ? &basepoints[EFFECT_INDEX_1] : nullptr,
                         basepoints[EFFECT_INDEX_2] ? &basepoints[EFFECT_INDEX_2] : nullptr,
-                        TRIGGERED_OLD_TRIGGERED, castItem, triggeredByAura);
+                        TRIGGERED_OLD_TRIGGERED | TRIGGERED_INSTANT_CAST, castItem, triggeredByAura);
     else
-        CastSpell(target, triggerEntry, TRIGGERED_OLD_TRIGGERED, castItem, triggeredByAura);
+        CastSpell(target, triggerEntry, TRIGGERED_OLD_TRIGGERED | TRIGGERED_INSTANT_CAST, castItem, triggeredByAura);
 
     if (cooldown)
         AddCooldown(*triggerEntry, nullptr, false, cooldown * IN_MILLISECONDS);

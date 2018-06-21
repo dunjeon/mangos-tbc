@@ -36,9 +36,9 @@ CreatureAI::CreatureAI(Creature* creature) :
     m_attackDistance(0.0f),
     m_attackAngle(0.0f),
     m_reactState(REACT_AGGRESSIVE),
-    m_meleeEnabled(true),
+    m_meleeEnabled(!(m_creature->GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_NO_MELEE)),
     m_visibilityDistance(VISIBLE_RANGE),
-    m_moveFurther(true),
+    m_moveFurther(false),
     m_combatScriptHappening(false)
 {
     m_dismountOnAggro = !(m_creature->GetCreatureInfo()->CreatureTypeFlags & CREATURE_TYPEFLAGS_MOUNTED_COMBAT);
@@ -58,7 +58,7 @@ CreatureAI::CreatureAI(Unit* unit) :
     m_reactState(REACT_AGGRESSIVE),
     m_meleeEnabled(true),
     m_visibilityDistance(VISIBLE_RANGE),
-    m_moveFurther(true),
+    m_moveFurther(false),
     m_combatScriptHappening(false)
 {
 }
@@ -144,7 +144,7 @@ CanCastResult CreatureAI::CanCastSpell(Unit* target, const SpellEntry* spellInfo
         if (m_unit->GetPower((Powers)spellInfo->powerType) < Spell::CalculatePowerCost(spellInfo, m_unit))
             return CAST_FAIL_POWER;
 
-        if (!spellInfo->HasAttribute(SPELL_ATTR_EX2_IGNORE_LOS) && !m_unit->IsWithinLOSInMap(target) && m_unit != target)
+        if (!IsIgnoreLosSpell(spellInfo) && !m_unit->IsWithinLOSInMap(target) && m_unit != target)
             return CAST_FAIL_NOT_IN_LOS;
     }
 
@@ -153,7 +153,7 @@ CanCastResult CreatureAI::CanCastSpell(Unit* target, const SpellEntry* spellInfo
         if (target != m_unit)
         {
             // pTarget is out of range of this spell (also done by Spell::CheckCast())
-            float distance = m_unit->GetCombatDistance(target, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT);
+            float distance = m_unit->GetDistance(target, true, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT ? DIST_CALC_COMBAT_REACH_WITH_MELEE : DIST_CALC_COMBAT_REACH);
 
             if (distance > spellRange->maxRange)
                 return CAST_FAIL_TOO_FAR;
@@ -512,6 +512,27 @@ Unit* CreatureAI::DoSelectLowestHpFriendly(float range, float minMissing, bool p
     }
 
     return pUnit;
+}
+
+void CreatureAI::DoFakeDeath(uint32 spellId)
+{
+    m_creature->InterruptNonMeleeSpells(false);
+    m_creature->SetHealth(1);
+    m_creature->StopMoving();
+    m_creature->ClearComboPointHolders();
+    m_creature->RemoveAllAurasOnDeath();
+    m_creature->ModifyAuraState(AURA_STATE_HEALTHLESS_20_PERCENT, false);
+    m_creature->ModifyAuraState(AURA_STATE_HEALTHLESS_35_PERCENT, false);
+    m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+    m_creature->ClearAllReactives();
+    m_creature->SetTarget(nullptr);
+    m_creature->GetMotionMaster()->Clear();
+    m_creature->GetMotionMaster()->MoveIdle();
+
+    if (spellId == 0)
+        m_creature->SetStandState(UNIT_STAND_STATE_DEAD);
+    else
+        DoCastSpellIfCan(m_creature, spellId, CAST_INTERRUPT_PREVIOUS);
 }
 
 bool CreatureAI::CanExecuteCombatAction()

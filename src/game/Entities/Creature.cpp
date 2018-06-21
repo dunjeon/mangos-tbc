@@ -94,6 +94,9 @@ VendorItem const* VendorItemData::FindItem(uint32 item_id) const
 
 bool ForcedDespawnDelayEvent::Execute(uint64 /*e_time*/, uint32 /*p_time*/)
 {
+    if (m_onlyAlive && !m_owner.isAlive())
+        return true; // still successful, just not executed
+
     m_owner.ForcedDespawn();
     return true;
 }
@@ -135,7 +138,8 @@ Creature::Creature(CreatureSubtype subtype) : Unit(),
     m_AlreadyCallAssistance(false), m_AlreadySearchedAssistance(false),
     m_isDeadByDefault(false), m_temporaryFactionFlags(TEMPFACTION_NONE),
     m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL), m_originalEntry(0),
-    m_creatureInfo(nullptr), m_ai(nullptr), m_gameEventVendorId(0), m_ignoreRangedTargets(false)
+    m_gameEventVendorId(0), m_ai(nullptr), m_isInvisible(false),
+    m_ignoreMMAP(false), m_creatureInfo(nullptr), m_ignoreRangedTargets(false), m_countSpawns(false)
 {
     m_regenTimer = 200;
     m_valuesCount = UNIT_END;
@@ -169,7 +173,7 @@ void Creature::AddToWorld()
     if (sWorld.isForceLoadMap(GetMapId()) || (GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_ACTIVE))
         SetActiveObjectState(true);
 
-    if (GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_COUNT_SPAWNS)
+    if (m_countSpawns)
         GetMap()->AddToSpawnCount(GetObjectGuid());
 }
 
@@ -181,7 +185,7 @@ void Creature::RemoveFromWorld()
         if (GetObjectGuid().GetHigh() == HIGHGUID_UNIT)
             GetMap()->GetObjectsStore().erase<Creature>(GetObjectGuid(), (Creature*)nullptr);
 
-        if (GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_COUNT_SPAWNS)
+        if (m_countSpawns)
             GetMap()->RemoveFromSpawnCount(GetObjectGuid());
     }
 
@@ -429,6 +433,10 @@ bool Creature::UpdateEntry(uint32 Entry, Team team, const CreatureData* data /*=
     SetModifierValue(UNIT_MOD_RESISTANCE_FROST,  BASE_VALUE, float(GetCreatureInfo()->ResistanceFrost));
     SetModifierValue(UNIT_MOD_RESISTANCE_SHADOW, BASE_VALUE, float(GetCreatureInfo()->ResistanceShadow));
     SetModifierValue(UNIT_MOD_RESISTANCE_ARCANE, BASE_VALUE, float(GetCreatureInfo()->ResistanceArcane));
+
+    m_isInvisible = GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_INVISIBLE;
+    m_ignoreMMAP = GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_MMAP_FORCE_DISABLE;
+    m_countSpawns = GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_COUNT_SPAWNS;
 
     SetCanModifyStats(true);
     UpdateAllStats();
@@ -1707,11 +1715,11 @@ void Creature::Respawn()
     }
 }
 
-void Creature::ForcedDespawn(uint32 timeMSToDespawn)
+void Creature::ForcedDespawn(uint32 timeMSToDespawn, bool onlyAlive)
 {
     if (timeMSToDespawn)
     {
-        ForcedDespawnDelayEvent* pEvent = new ForcedDespawnDelayEvent(*this);
+        ForcedDespawnDelayEvent* pEvent = new ForcedDespawnDelayEvent(*this, onlyAlive);
 
         m_Events.AddEvent(pEvent, m_Events.CalculateTime(timeMSToDespawn));
         return;
@@ -1812,7 +1820,7 @@ SpellEntry const* Creature::ReachWithSpellAttack(Unit* pVictim)
         float range = GetSpellMaxRange(srange);
         float minrange = GetSpellMinRange(srange);
 
-        float dist = GetCombatDistance(pVictim, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT);
+        float dist = GetDistance(pVictim, true, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT ? DIST_CALC_COMBAT_REACH_WITH_MELEE : DIST_CALC_COMBAT_REACH);
 
         // if(!isInFront( pVictim, range ) && spellInfo->AttributesEx )
         //    continue;
@@ -1861,7 +1869,7 @@ SpellEntry const* Creature::ReachWithSpellCure(Unit* pVictim)
         float range = GetSpellMaxRange(srange);
         float minrange = GetSpellMinRange(srange);
 
-        float dist = GetCombatDistance(pVictim, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT);
+        float dist = GetDistance(pVictim, true, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT ? DIST_CALC_COMBAT_REACH_WITH_MELEE : DIST_CALC_COMBAT_REACH);
 
         // if(!isInFront( pVictim, range ) && spellInfo->AttributesEx )
         //    continue;
@@ -1882,7 +1890,7 @@ bool Creature::IsVisibleInGridForPlayer(Player* pl) const
     if (pl->isGameMaster())
         return true;
 
-    if (GetCreatureInfo()->ExtraFlags & CREATURE_EXTRA_FLAG_INVISIBLE)
+    if (IsInvisible())
         return false;
 
     // Live player (or with not release body see live creatures or death creatures with corpse disappearing time > 0
@@ -2153,9 +2161,9 @@ void Creature::SetInCombatWithZone()
             if (pPlayer->isGameMaster())
                 continue;
 
-            if (pPlayer->isAlive() && CanAttack(pPlayer))
+            if (pPlayer->isAlive())
             {
-                pPlayer->SetInCombatWith(this);
+                SetInCombatWith(pPlayer);
                 AddThreat(pPlayer);
             }
         }
@@ -2192,7 +2200,7 @@ bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* 
 
         if ((selectFlags & SELECT_FLAG_RANGE_RANGE))
         {
-            float dist = GetCombatDistance(pTarget, false);
+            float dist = GetDistance(pTarget, true, DIST_CALC_COMBAT_REACH);
             if (dist > params.range.maxRange || dist < params.range.minRange)
                 return false;
         }
@@ -2234,7 +2242,7 @@ bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* 
         SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(pSpellInfo->rangeIndex);
         float max_range = GetSpellMaxRange(srange);
         float min_range = GetSpellMinRange(srange);
-        float dist = GetCombatDistance(pTarget, false);
+        float dist = GetDistance(pTarget, true, DIST_CALC_COMBAT_REACH);
 
         return dist < max_range && dist >= min_range;
     }
@@ -2841,7 +2849,7 @@ void Creature::ReduceCorpseDecayTimer()
             isDungeonEncounter = true;
     }
 
-    if (!isDungeonEncounter)
+    if (!isDungeonEncounter && m_corpseDecayTimer > 2 * MINUTE * IN_MILLISECONDS)
         m_corpseDecayTimer = 2 * MINUTE * IN_MILLISECONDS;  // 2 minutes for a creature
 }
 

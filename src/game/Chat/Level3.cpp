@@ -3524,7 +3524,7 @@ bool ChatHandler::HandleGetDistanceCommand(char* args)
     dy = player->GetPositionY() - obj->GetPositionY();
     dz = player->GetPositionZ() - obj->GetPositionZ();
 
-    PSendSysMessage(LANG_DISTANCE, player->GetDistance(obj), player->GetDistance2d(obj), sqrt(dx * dx + dy * dy + dz * dz));
+    PSendSysMessage(LANG_DISTANCE, player->GetDistance(obj), player->GetDistance(obj, false), sqrt(dx * dx + dy * dy + dz * dz));
 
     return true;
 }
@@ -5925,14 +5925,7 @@ bool ChatHandler::HandleCastCommand(char* args)
     if (!*args)
         return false;
 
-    Unit* target = getSelectedUnit();
-
-    if (!target)
-    {
-        SendSysMessage(LANG_SELECT_CHAR_OR_CREATURE);
-        SetSentErrorMessage(true);
-        return false;
-    }
+    Unit* target = getSelectedUnit(false);
 
     // number or [name] Shift-click form |color|Hspell:spell_id|h[name]|h|r or Htalent form
     uint32 spell = ExtractSpellIdFromLink(&args);
