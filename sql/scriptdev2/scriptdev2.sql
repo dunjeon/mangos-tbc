@@ -480,6 +480,8 @@ UPDATE creature_template SET ScriptName='npc_magrami_spectre' WHERE entry=11560;
 
 /* DIRE MAUL */
 UPDATE instance_template SET ScriptName='instance_dire_maul' WHERE map=429;
+UPDATE gameobject_template SET ScriptName='go_fixed_trap' WHERE entry=179512;
+UPDATE creature_template SET ScriptName='npc_mizzle_crafty' WHERE entry=14353;
 INSERT INTO scripted_event_id VALUES
 (8420,'event_spells_warlock_dreadsteed'),
 (8428,'event_spells_warlock_dreadsteed');
@@ -2806,7 +2808,9 @@ INSERT INTO script_texts (entry,content_default,sound,type,language,emote,commen
 
 (-1429002,'At last... Freed from his cursed grasp!',0,6,0,0,'old ironbark SAY_IRONBARK_REDEEM'),
 
-(-1429003,'The king is dead - OH NOES! Summon Mizzle da Crafty! He knows what to do next!',0,1,0,0,'cho\'rush SAY_KING_DEAD');
+(-1429003,'The king is dead - OH NOES! Summon Mizzle da Crafty! He knows what to do next!',0,1,0,0,'cho\'rush SAY_KING_DEAD'),
+
+(-1429004,'Doh!',0,0,0,0,'slip\'kik SAY_SLIPKIK_TRAP');
 
 -- -1 469 000 BLACKWING LAIR
 INSERT INTO script_texts (entry,content_default,sound,type,language,emote,comment) VALUES
