@@ -174,6 +174,7 @@ class Pet : public Creature
         static void DeleteFromDB(uint32 guidlow, bool separate_transaction = true);
         static void DeleteFromDB(Unit* owner, PetSaveMode slot);
         static SpellCastResult TryLoadFromDB(Unit* owner, uint32 petentry = 0, uint32 petnumber = 0, bool current = false, PetType mandatoryPetType = MAX_PET_TYPE);
+        void PlayDismissSound();
 
         ObjectGuid const GetSpawnerGuid() const override { return GetOwnerGuid(); }
 
@@ -218,6 +219,7 @@ class Pet : public Creature
         void GivePetLevel(uint32 level);
         void SynchronizeLevelWithOwner();
         void InitStatsForLevel(uint32 level);
+        void InitPetScalingAuras();
         bool HaveInDiet(ItemPrototype const* item) const;
         uint32 GetCurrentFoodBenefitLevel(uint32 itemlevel) const;
         void SetDuration(int32 dur) { m_duration = dur; }

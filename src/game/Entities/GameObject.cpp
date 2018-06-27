@@ -170,7 +170,10 @@ bool GameObject::Create(uint32 guidlow, uint32 name_id, Map* map, float x, float
     SetUInt32Value(GAMEOBJECT_FLAGS, goinfo->flags);
 
     if (goinfo->type == GAMEOBJECT_TYPE_TRANSPORT)
+    {
         SetFlag(GAMEOBJECT_FLAGS, (GO_FLAG_TRANSPORT | GO_FLAG_NODESPAWN));
+        m_updateFlag |= UPDATEFLAG_TRANSPORT;
+    }
 
     SetEntry(goinfo->id);
     SetDisplayId(goinfo->displayId);
@@ -1796,7 +1799,7 @@ bool GameObject::IsHostileTo(Unit const* unit) const
                 return *force <= REP_HOSTILE;
 
             // apply reputation state
-            FactionEntry const* raw_tester_faction = sFactionStore.LookupEntry(tester_faction->faction);
+            FactionEntry const* raw_tester_faction = sFactionStore.LookupEntry<FactionEntry>(tester_faction->faction);
             if (raw_tester_faction && raw_tester_faction->reputationListID >= 0)
                 return ((Player const*)unit)->GetReputationMgr().GetRank(raw_tester_faction) <= REP_HOSTILE;
         }
@@ -1839,7 +1842,7 @@ bool GameObject::IsFriendlyTo(Unit const* unit) const
                 return *force >= REP_FRIENDLY;
 
             // apply reputation state
-            if (FactionEntry const* raw_tester_faction = sFactionStore.LookupEntry(tester_faction->faction))
+            if (FactionEntry const* raw_tester_faction = sFactionStore.LookupEntry<FactionEntry>(tester_faction->faction))
                 if (raw_tester_faction->reputationListID >= 0)
                     return ((Player const*)unit)->GetReputationMgr().GetRank(raw_tester_faction) >= REP_FRIENDLY;
         }

@@ -286,6 +286,18 @@ bool ChatHandler::HandleDebugPlayMusicCommand(char* args)
     return true;
 }
 
+// Play pet dismiss sound
+bool ChatHandler::HandleDebugPetDismissSound(char* args)
+{
+    uint32 petDismissSound;
+    if (!ExtractUInt32(&args, petDismissSound))
+        return false;
+
+    m_session->GetPlayer()->SendPetDismiss(petDismissSound);
+    PSendSysMessage(LANG_YOU_HEAR_SOUND, petDismissSound);
+    return true;
+}
+
 // Send notification in channel
 bool ChatHandler::HandleDebugSendChannelNotifyCommand(char* args)
 {
@@ -1167,5 +1179,29 @@ bool ChatHandler::HandleDebugWaypoint(char* args)
 
     target->GetMotionMaster()->MoveWaypoint(pathId, 2);
 
+    return true;
+}
+
+bool ChatHandler::HandleDebugSpellVisual(char* args)
+{
+    Unit* target = getSelectedUnit();
+    if (!target)
+        return false;
+
+    uint32 spellVisualID;
+    if (!ExtractUInt32(&args, spellVisualID))
+        return false;
+
+    target->PlaySpellVisual(spellVisualID);
+    return true;
+}
+
+bool ChatHandler::HandleDebugMoveflags(char* args)
+{
+    Unit* target = getSelectedUnit();
+    if (!target)
+        return false;
+
+    PSendSysMessage("Moveflags on target %u", target->m_movementInfo.GetMovementFlags());
     return true;
 }

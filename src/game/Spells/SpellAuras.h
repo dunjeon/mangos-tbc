@@ -167,15 +167,8 @@ class SpellAuraHolder
 
             UpdateAuraApplication();
         }
-        bool DropAuraCharge()                               // return true if last charge dropped
-        {
-            if (m_procCharges == 0)
-                return false;
 
-            --m_procCharges;
-            UpdateAuraApplication();
-            return m_procCharges == 0;
-        }
+        bool DropAuraCharge();                               // return true if last charge dropped
 
         time_t GetAuraApplyTime() const { return m_applyTime; }
 
@@ -436,6 +429,8 @@ class Aura
         }
         uint32 GetStackAmount() const { return GetHolder()->GetStackAmount(); }
 
+        bool DropAuraCharge();                               // return true if last charge dropped
+
         void SetLoadedState(int32 damage, uint32 periodicTime)
         {
             m_modifier.m_amount = damage;
@@ -474,6 +469,11 @@ class Aura
         bool IsLastAuraOnHolder();
 
         bool HasMechanic(uint32 mechanic) const;
+
+        SpellModifier* GetSpellModifier() { return m_spellmod; }
+
+        void UseMagnet() { m_magnetUsed = true; }
+        bool IsMagnetUsed() { return m_magnetUsed; }
     protected:
         Aura(SpellEntry const* spellproto, SpellEffectIndex eff, int32* currentBasePoints, SpellAuraHolder* holder, Unit* target, Unit* caster = nullptr, Item* castItem = nullptr);
 
@@ -503,6 +503,7 @@ class Aura
         bool m_isPeriodic: 1;
         bool m_isAreaAura: 1;
         bool m_isPersistent: 1;
+        bool m_magnetUsed: 1;
 
         SpellAuraHolder* const m_spellAuraHolder;
     private:

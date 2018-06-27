@@ -514,6 +514,22 @@ inline bool IsCasterSourceTarget(uint32 target)
     return false;
 }
 
+inline bool IsSpellWithScriptUnitTarget(SpellEntry const* spellInfo)
+{
+    for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (!spellInfo->Effect[i])
+            continue;
+        switch (spellInfo->EffectImplicitTargetA[i])
+        {
+            case TARGET_SCRIPT:
+                return true;
+        }
+    }
+
+    return false;
+}
+
 inline bool IsSpellWithCasterSourceTargetsOnly(SpellEntry const* spellInfo)
 {
     for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
@@ -1399,6 +1415,37 @@ inline bool IsAuraAddedBySpell(uint32 auraType, uint32 spellId)
     return false;
 }
 
+inline bool IsPartyOrRaidTarget(uint32 target)
+{
+    switch (target)
+    {
+        case TARGET_RANDOM_FRIEND_CHAIN_IN_AREA:
+        case TARGET_ALL_PARTY_AROUND_CASTER:
+        case TARGET_ALL_PARTY:
+        case TARGET_ALL_PARTY_AROUND_CASTER_2:
+        case TARGET_SINGLE_PARTY:
+        case TARGET_AREAEFFECT_PARTY:
+        case TARGET_ALL_RAID_AROUND_CASTER:
+        case TARGET_SINGLE_FRIEND_2:
+        case TARGET_58:
+        case TARGET_AREAEFFECT_PARTY_AND_CLASS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool IsGroupBuff(SpellEntry const* spellInfo)
+{
+    for (uint8 i = 0; i < MAX_EFFECT_INDEX; ++i)
+    {
+        if (IsPartyOrRaidTarget(spellInfo->EffectImplicitTargetA[i]))
+            return true;
+    }
+
+    return false;
+}
+
 // Caster Centric Specific: A target cannot have more than one instance of specific per caster
 // This a relaxed rule and does not automatically exclude multi-ranking, multi-ranking should be handled separately (usually on effect stacking level)
 // Example: Curses. One curse per caster, Curse of Agony and Curse of Doom ranks are stackable among casters, the rest of curse stacking logic is handled on effect basis
@@ -1894,7 +1941,8 @@ enum ProcFlagsEx
     PROC_EX_RESERVED3           = 0x0008000,
     PROC_EX_EX_TRIGGER_ALWAYS   = 0x0010000,                // If set trigger always ( no matter another flags) used for drop charges
     PROC_EX_EX_ONE_TIME_TRIGGER = 0x0020000,                // If set trigger always but only one time (not used)
-    PROC_EX_PERIODIC_POSITIVE   = 0x0040000,                 // For periodic heal
+    PROC_EX_PERIODIC_POSITIVE   = 0x0040000,                // For periodic heal
+    PROC_EX_MAGNET              = 0x0080000,                // For grounding totem hit
 
     // Flags for internal use - do not use these in db!
     PROC_EX_INTERNAL_HOT        = 0x2000000

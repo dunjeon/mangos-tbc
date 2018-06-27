@@ -223,10 +223,14 @@ class ChatHandler
         bool HandleDebugTaxiCommand(char* /*args*/);
         bool HandleDebugUpdateWorldStateCommand(char* args);
         bool HandleDebugWaypoint(char* args);
+        bool HandleDebugSpellVisual(char* args);
+        bool HandleDebugMoveflags(char* args);
 
         bool HandleDebugPlayCinematicCommand(char* args);
         bool HandleDebugPlaySoundCommand(char* args);
         bool HandleDebugPlayMusicCommand(char* args);
+
+        bool HandleDebugPetDismissSound(char* args);
 
         bool HandleDebugSendBuyErrorCommand(char* args);
         bool HandleDebugSendChannelNotifyCommand(char* args);

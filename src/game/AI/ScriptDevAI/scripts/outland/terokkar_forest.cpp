@@ -309,6 +309,7 @@ struct npc_hungry_nether_rayAI : public ScriptedPetAI
         m_uiFeedTimer = 0;
         m_uiFeedCounter = 0;
         m_bFeeding = false;
+        SetReactState(REACT_PASSIVE);
     }
 
     void OwnerKilledUnit(Unit* pVictim) override
@@ -1022,24 +1023,19 @@ struct npc_skyguard_prisonerAI : public npc_escortAI
         if (eventType == AI_EVENT_START_ESCORT && pInvoker->GetTypeId() == TYPEID_PLAYER)
         {
             m_creature->SetFactionTemporary(FACTION_ESCORT_N_NEUTRAL_ACTIVE, TEMPFACTION_RESTORE_RESPAWN);
+
             Start(false, (Player*)pInvoker, GetQuestTemplateStore(uiMiscValue));
 
-            // ToDo: add additional WP when DB will support it
+            SetEscortPaused(true);
+
             if (m_creature->GetPositionZ() < 310.0f)
-            {
-                SetEscortPaused(true);
-                //SetCurrentWaypoint(WP_ID_SPAWN_1);
-                //SetEscortPaused(false);
-                script_error_log("NPC entry %u, location %f, %f, %f does not have waypoints implemented for current spawn location. Please contact customer support!", m_creature->GetEntry(), m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ());
-            }
+                SetCurrentWaypoint(19);
             else if (m_creature->GetPositionZ() < 330.0f)
-            {
-                SetEscortPaused(true);
-                //SetCurrentWaypoint(WP_ID_SPAWN_2);
-                //SetEscortPaused(false);
-                script_error_log("NPC entry %u, location %f, %f, %f does not have waypoints implemented for current spawn location. Please contact customer support!", m_creature->GetEntry(), m_creature->GetPositionX(), m_creature->GetPositionY(), m_creature->GetPositionZ());
-            }
-            // else just use standard WP
+                SetCurrentWaypoint(28);
+            else
+                SetCurrentWaypoint(0);
+
+            SetEscortPaused(false);
 
             // open cage
             if (GameObject* pCage = GetClosestGameObjectWithEntry(m_creature, GO_PRISONER_CAGE, 10.0f))
@@ -1068,21 +1064,45 @@ struct npc_skyguard_prisonerAI : public npc_escortAI
         switch (uiPointId)
         {
             case 0:
+            case 19:
+            case 28:
                 DoScriptText(SAY_ESCORT_START, m_creature);
                 break;
-            case 13:
+
+            case 12:
                 m_creature->SummonCreature(NPC_WING_GUARD, -4179.043f, 3081.007f, 328.28f, 4.51f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 60000);
                 m_creature->SummonCreature(NPC_WING_GUARD, -4181.610f, 3081.289f, 328.32f, 4.52f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 60000);
                 break;
-            case 14:
+            case 23:
+                m_creature->SummonCreature(NPC_WING_GUARD, -3653.75f, 3750.8f, 302.101f, 2.11185f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 60000);
+                m_creature->SummonCreature(NPC_WING_GUARD, -3649.91f, 3754.08f, 303.007f, 2.3911f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 60000);
+                break;
+            case 31:
+                m_creature->SummonCreature(NPC_WING_GUARD, -3680.32f, 3318.81f, 311.501f, 1.55334f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 60000);
+                m_creature->SummonCreature(NPC_WING_GUARD, -3677.91f, 3317.93f, 311.573f, 1.48353f, TEMPSPAWN_TIMED_OOC_OR_DEAD_DESPAWN, 60000);
+                break;
+
+            case 13:
+            case 24:
+            case 32:
                 DoScriptText(SAY_AMBUSH_END, m_creature);
                 break;
-            case 18:
+
+            case 17:
+            case 26:
+            case 35:
                 DoScriptText(SAY_ESCORT_COMPLETE, m_creature);
                 SetRun();
 
                 if (Player* pPlayer = GetPlayerForEscort())
                     pPlayer->GroupEventHappens(QUEST_ID_ESCAPE_SKETTIS, m_creature);
+
+                break;
+
+            case 18:
+            case 27:
+            case 36:
+                m_creature->ForcedDespawn();
                 break;
         }
     }
@@ -1211,6 +1231,237 @@ CreatureAI* GetAI_npc_minion_of_terokk(Creature* pCreature)
     return new npc_minion_of_terokkAI(pCreature);
 }
 
+enum
+{
+    POINT_HARBINGER_POSITION = 1,
+
+    NPC_VENGEFUL_HARBINGER = 21638,
+
+    SPELL_COSMETIC_CHAIN_LIGHTNING = 37226,
+    SPELL_ETHEREAL_TELEPORT        = 34427,
+
+    DBSCRIPT_TOMB_GUARDIAN = 10062,
+    DBSCRIPT_EVENT_RESET = 10068
+};
+
+struct npc_draenei_tomb_guardian : public ScriptedAI
+{
+    npc_draenei_tomb_guardian(Creature* pCreature) : ScriptedAI(pCreature) { Reset(); summons.clear(); }
+
+    Creature* harbinger;
+    std::vector<ObjectGuid> summons;
+    ObjectGuid m_playerGuid;
+
+    void Reset() override {}
+
+    void JustRespawned() override
+    {
+        if (Unit* spawner = m_creature->GetSpawner()) // spawner is white orb
+            if (Unit* player = spawner->GetSpawner()) // white orbs spawner is player
+                m_playerGuid = player->GetObjectGuid();
+
+        m_creature->CastSpell(nullptr, SPELL_ETHEREAL_TELEPORT, TRIGGERED_NONE);
+    }
+
+    void JustSummoned(Creature* pSummoned) override
+    {
+        summons.push_back(pSummoned->GetObjectGuid());
+    }
+
+    ObjectGuid GetPlayerGuid()
+    {
+        return m_playerGuid;
+    }
+
+    void ResetEvent()
+    {
+        //m_creature->RemoveGuardians();
+
+        // Despawn Bone Wastes - Orb Waypoint 01, Bone Wastes - Event Trigger B, Nether Cloud
+        m_creature->GetMap()->ScriptsStart(sRelayScripts, DBSCRIPT_EVENT_RESET, m_creature, m_creature);
+        
+        // Despawn Vengeful Harbinger and Vengeful Draenei
+        for (ObjectGuid &guid : summons)
+            if (Creature* creature = m_creature->GetMap()->GetCreature(guid))
+                creature->ForcedDespawn();
+
+        // Despawn Self
+        m_creature->ForcedDespawn();
+    }
+
+    void ReceiveAIEvent(AIEventType eventType, Creature* sender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    {
+        if (sender->GetEntry() != NPC_VENGEFUL_HARBINGER)
+            return;
+
+        switch (eventType)
+        {
+            case AI_EVENT_CUSTOM_A:
+            {
+                harbinger = sender;
+
+                float x, y, z;
+                harbinger->GetContactPoint(m_creature, x, y, z, CONTACT_DISTANCE);
+                m_creature->GetMotionMaster()->MovePoint(POINT_HARBINGER_POSITION, x, y, z);
+                break;
+            }
+            case AI_EVENT_CUSTOM_B:
+            {
+                ResetEvent();
+            }
+        }
+    }
+
+    void MovementInform(uint32 uiMovementType, uint32 uiData) override
+    {
+        if (uiMovementType == POINT_MOTION_TYPE && uiData == POINT_HARBINGER_POSITION && harbinger)
+        {
+            m_creature->CastSpell(harbinger, SPELL_COSMETIC_CHAIN_LIGHTNING, TRIGGERED_OLD_TRIGGERED);
+            m_creature->GetMap()->ScriptsStart(sRelayScripts, DBSCRIPT_TOMB_GUARDIAN, m_creature, m_creature);
+        }
+    }
+};
+
+CreatureAI* GetAI_npc_draenei_tomb_guardian(Creature* pCreature)
+{
+    return new npc_draenei_tomb_guardian(pCreature);
+}
+
+enum
+{
+    POINT_ORB_WAYPOINT = 1,
+
+    NPC_ORB_WAYPOINT_1 = 21443,
+    NPC_DRAENEI_TOMB_GUARDIAN = 22285,
+
+    DBSCRIPT_VENGEFUL_HARBINGER_FAKE_DEATH = 10063,
+
+    EVENT_RESET_TIMER = 120000,
+
+    UNUSED_DUMMY_SPELL_1 = 36553, // PetWait - Vengeful Harbinger casts this on self at death. Currently unused since the purpose is unknown.
+    UNUSED_DUMMY_SPELL_2 = 36551, // AIClearReturnState - Vengeful Harbinger casts this on self at death. Currently unused since the purpose is unknown.
+
+    QUEST_VENGEFUL_HARBINGER = 10842,
+
+    POINT_ID_END = 4,
+    PATH_ID_END = 2,
+};
+
+struct npc_vengeful_harbinger : public ScriptedAI
+{
+    npc_vengeful_harbinger(Creature* pCreature) : ScriptedAI(pCreature) { Reset(); }
+
+    uint32 eventResetTimer;
+    ObjectGuid m_playerGuid;
+
+    void Reset() override 
+    {
+        eventResetTimer = EVENT_RESET_TIMER;
+    }
+
+    void JustRespawned() override
+    {
+        if (Unit* spawner = m_creature->GetSpawner()) // spawner is tomb guardian
+            if (npc_draenei_tomb_guardian* ai = dynamic_cast<npc_draenei_tomb_guardian*>(spawner->AI()))
+                m_playerGuid = ai->GetPlayerGuid();
+    }
+
+    void ReceiveAIEvent(AIEventType eventType, Creature* sender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    {
+        if (sender != m_creature) // Sender should always be the creature itself
+            return;
+
+        if (eventType != AI_EVENT_CUSTOM_A)
+            return;
+
+        if (Creature* waypointTrigger = GetClosestCreatureWithEntry(m_creature, NPC_ORB_WAYPOINT_1, 45.f))
+        {
+            m_creature->GetMotionMaster()->MovePoint(POINT_ORB_WAYPOINT, waypointTrigger->GetPositionX(), waypointTrigger->GetPositionY(), waypointTrigger->GetPositionZ());
+        }
+        else // Players somehow managed to kill him really far away. In this case just move on waypoints directly.
+        {
+            m_creature->GetMotionMaster()->Clear(false, true);
+            m_creature->GetMotionMaster()->MoveWaypoint(2);
+        }
+    }
+
+    void MovementInform(uint32 uiMovementType, uint32 uiData) override
+    {
+        switch (uiMovementType)
+        {
+            case POINT_MOTION_TYPE:
+            {
+                if (uiData == POINT_ORB_WAYPOINT)
+                {
+                    m_creature->GetMotionMaster()->Clear(false, true);
+                    m_creature->GetMotionMaster()->MoveWaypoint(2);
+                }
+                break;
+            }
+            // Turns out, you can just complete it at the respawned GO without credit
+            //case WAYPOINT_MOTION_TYPE:
+            //    if (uiData == POINT_ID_END && m_creature->GetMotionMaster()->GetPathId() == PATH_ID_END)
+            //        if (Player* player = m_creature->GetMap()->GetPlayer(m_playerGuid))
+            //            player->GroupEventHappens(QUEST_VENGEFUL_HARBINGER, m_creature);
+            //    break;
+        }
+    }
+
+    void UpdateAI(const uint32 uiDiff) override
+    {
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        {
+            if (eventResetTimer)
+            {
+                if (eventResetTimer <= uiDiff)
+                {
+                    if (Creature* tombGuardian = GetClosestCreatureWithEntry(m_creature, NPC_DRAENEI_TOMB_GUARDIAN, 15))
+                    {
+                        m_creature->AI()->SendAIEvent(AI_EVENT_CUSTOM_B, m_creature, tombGuardian);
+                        eventResetTimer = 0;
+                    }
+                    else
+                    {
+                        sLog.outCustomLog("Vengeful Harbinger found out of combat in a strange place. This should never happen!");
+                        m_creature->ForcedDespawn();
+                    }
+                }
+                else
+                    eventResetTimer -= uiDiff;
+            }
+        }
+        else
+            DoMeleeAttackIfReady();  
+    }
+
+    void DamageTaken(Unit* /*pDoneBy*/, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    {
+        if (uiDamage < m_creature->GetHealth())
+            return;
+
+        uiDamage = 0;
+
+        m_creature->CombatStop();
+        m_creature->InterruptNonMeleeSpells(true);
+        m_creature->DeleteThreatList();
+        m_creature->SetHealth(1);
+        m_creature->StopMoving();
+        m_creature->ClearComboPointHolders();
+        m_creature->RemoveAllAurasOnDeath();
+        m_creature->ModifyAuraState(AURA_STATE_HEALTHLESS_20_PERCENT, false);
+        m_creature->ModifyAuraState(AURA_STATE_HEALTHLESS_35_PERCENT, false);
+        m_creature->ClearAllReactives();
+        m_creature->GetMotionMaster()->Clear(false, true);
+        m_creature->GetMotionMaster()->MoveIdle();
+        m_creature->GetMap()->ScriptsStart(sRelayScripts, DBSCRIPT_VENGEFUL_HARBINGER_FAKE_DEATH, m_creature, m_creature);
+    }
+};
+
+CreatureAI* GetAI_npc_vengeful_harbinger(Creature* pCreature)
+{
+    return new npc_vengeful_harbinger(pCreature);
+}
+
 void AddSC_terokkar_forest()
 {
     Script* pNewScript;
@@ -1273,5 +1524,15 @@ void AddSC_terokkar_forest()
     pNewScript = new Script;
     pNewScript->Name = "npc_minion_of_terokk";
     pNewScript->GetAI = &GetAI_npc_minion_of_terokk;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_draenei_tomb_guardian";
+    pNewScript->GetAI = &GetAI_npc_draenei_tomb_guardian;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_vengeful_harbinger";
+    pNewScript->GetAI = &GetAI_npc_vengeful_harbinger;
     pNewScript->RegisterSelf();
 }

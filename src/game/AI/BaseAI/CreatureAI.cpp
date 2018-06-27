@@ -90,7 +90,7 @@ void CreatureAI::MoveInLineOfSight(Unit* who)
             return;
 
         if (m_creature->CanAttackOnSight(who))
-            DetectOrAttack(who, m_creature);
+            DetectOrAttack(who);
     }
 }
 
@@ -144,13 +144,13 @@ CanCastResult CreatureAI::CanCastSpell(Unit* target, const SpellEntry* spellInfo
         if (m_unit->GetPower((Powers)spellInfo->powerType) < Spell::CalculatePowerCost(spellInfo, m_unit))
             return CAST_FAIL_POWER;
 
-        if (!IsIgnoreLosSpell(spellInfo) && !m_unit->IsWithinLOSInMap(target) && m_unit != target)
+        if (target && !IsIgnoreLosSpellCast(spellInfo) && !m_unit->IsWithinLOSInMap(target, true) && m_unit != target)
             return CAST_FAIL_NOT_IN_LOS;
     }
 
     if (const SpellRangeEntry* spellRange = sSpellRangeStore.LookupEntry(spellInfo->rangeIndex))
     {
-        if (target != m_unit)
+        if (target && target != m_unit)
         {
             // pTarget is out of range of this spell (also done by Spell::CheckCast())
             float distance = m_unit->GetDistance(target, true, spellInfo->rangeIndex == SPELL_RANGE_IDX_COMBAT ? DIST_CALC_COMBAT_REACH_WITH_MELEE : DIST_CALC_COMBAT_REACH);
@@ -174,14 +174,16 @@ CanCastResult CreatureAI::DoCastSpellIfCan(Unit* target, uint32 spellId, uint32 
 {
     Unit* caster = m_unit;
 
-    if (!target)
+    if (target)
+    {
+        if (castFlags & CAST_SWITCH_CASTER_TARGET)
+            std::swap(caster, target);
+
+        if (castFlags & CAST_FORCE_TARGET_SELF)
+            caster = target;
+    }
+    else if (castFlags & (CAST_FORCE_TARGET_SELF | CAST_SWITCH_CASTER_TARGET))
         return CAST_FAIL_OTHER;
-
-    if (castFlags & CAST_SWITCH_CASTER_TARGET)
-        std::swap(caster, target);
-
-    if (castFlags & CAST_FORCE_TARGET_SELF)
-        caster = target;
 
     // Allowed to cast only if not casting (unless we interrupt ourself) or if spell is triggered
     if (!caster->IsNonMeleeSpellCasted(false) || (castFlags & (CAST_TRIGGERED | CAST_INTERRUPT_PREVIOUS)))
@@ -191,7 +193,12 @@ CanCastResult CreatureAI::DoCastSpellIfCan(Unit* target, uint32 spellId, uint32 
             // If cast flag CAST_AURA_NOT_PRESENT is active, check if target already has aura on them
             if (castFlags & CAST_AURA_NOT_PRESENT)
             {
-                if (target->HasAura(spellId))
+                if (!target)
+                {
+                    if (caster->HasAura(spellId))
+                        return CAST_FAIL_TARGET_AURA;
+                }
+                else if (target->HasAura(spellId))
                     return CAST_FAIL_TARGET_AURA;
             }
 
@@ -368,35 +375,48 @@ void CreatureAI::CheckForHelp(Unit* who, Creature* me, float distance)
     }
 }
 
-void CreatureAI::DetectOrAttack(Unit* who, Creature* me)
+void CreatureAI::DetectOrAttack(Unit* who)
 {
-    float attackRadius = me->GetAttackDistance(who);
+    float attackRadius = m_creature->GetAttackDistance(who);
+    if (!m_creature->IsWithinLOSInMap(who))
+        return;
 
-    if (me->IsWithinDistInMap(who, attackRadius) && me->IsWithinLOSInMap(who))
+    if (!m_creature->IsWithinDistInMap(who, attackRadius))
+        return;
+
+    if (!m_creature->getVictim() && !m_creature->isInCombat())
     {
-        if (!me->getVictim())
+        if (CanTriggerStealthAlert(who, attackRadius))
         {
-            if (who->HasStealthAura() || who->HasInvisibilityAura())
-            {
-                if (!me->hasUnitState(UNIT_STAT_DISTRACTED) && !me->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
-                {
-                    me->GetMotionMaster()->MoveDistract(TIME_INTERVAL_LOOK);
-                    me->SetFacingTo(me->GetAngle(who));
-                }
+            m_creature->SendAIReaction(AI_REACTION_ALERT);
+            m_creature->SetFacingTo(m_creature->GetAngle(who));
+            m_creature->GetMotionMaster()->MoveDistract(TIME_INTERVAL_LOOK);
 
-                if (me->IsWithinDistInMap(who, who->GetVisibleDist(me) * 0.7f))
-                    AttackStart(who);
-            }
-            else
-                AttackStart(who);
+            return;
         }
-        else if (me->GetMap()->IsDungeon())
-        {
-            me->AddThreat(who);
-            me->SetInCombatWith(who);
-            who->SetInCombatWith(me);
-        }
+
+        AttackStart(who);
     }
+    else if (m_creature->GetMap()->IsDungeon())
+    {
+        m_creature->AddThreat(who);
+        m_creature->SetInCombatWith(who);
+        who->SetInCombatWith(m_creature);
+    }
+}
+
+bool CreatureAI::CanTriggerStealthAlert(Unit* who, float attackRadius)
+{
+    if (who->GetTypeId() != TYPEID_PLAYER)
+        return false;
+    if (m_creature->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL))
+        return false;
+
+    if (m_creature->hasUnitState(UNIT_STAT_DISTRACTED))
+        return false;
+
+    return who->HasStealthAura() &&
+        !m_creature->IsWithinDistInMap(who, who->GetVisibleDistance(m_creature));
 }
 
 // ////////////////////////////////////////////////////////////////////////////////////////////////

@@ -390,7 +390,8 @@ class CreatureAI
         virtual void OnChannelStateChange(SpellEntry const* spellInfo, bool state, WorldObject* target = nullptr);
 
         void CheckForHelp(Unit* /*who*/, Creature* /*me*/, float /*dist*/);
-        void DetectOrAttack(Unit* /*who*/, Creature* /*me*/);
+        void DetectOrAttack(Unit* who);
+        bool CanTriggerStealthAlert(Unit* who, float attackRadius);
 
         virtual void HandleMovementOnAttackStart(Unit* victim) const;
 
@@ -411,6 +412,11 @@ class CreatureAI
         bool GetCombatScriptStatus() { return m_combatScriptHappening; }
 
         void SetMeleeEnabled(bool state);
+
+        // Rough prototype, we might not need such fidelity
+        virtual void JustRootedTarget(SpellEntry const* spellInfo, Unit* victim) { JustStoppedMovementOfTarget(spellInfo, victim); }
+        virtual void JustStunnedTarget(SpellEntry const* spellInfo, Unit* victim) { JustStoppedMovementOfTarget(spellInfo, victim); }
+        virtual void JustStoppedMovementOfTarget(SpellEntry const* spellInfo, Unit* victim) {}
 
     protected:
         ///== Fields =======================================

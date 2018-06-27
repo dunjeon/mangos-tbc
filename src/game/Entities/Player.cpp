@@ -1859,34 +1859,13 @@ void Player::ProcessDelayedOperations()
         return;
 
     if (m_DelayedOperations & DELAYED_RESURRECT_PLAYER)
-    {
-        ResurrectPlayer(0.0f, false);
-
-        if (GetMaxHealth() > m_resurrectHealth)
-            SetHealth(m_resurrectHealth);
-        else
-            SetHealth(GetMaxHealth());
-
-        if (GetMaxPower(POWER_MANA) > m_resurrectMana)
-            SetPower(POWER_MANA, m_resurrectMana);
-        else
-            SetPower(POWER_MANA, GetMaxPower(POWER_MANA));
-
-        SetPower(POWER_RAGE, 0);
-        SetPower(POWER_ENERGY, GetMaxPower(POWER_ENERGY));
-
-        SpawnCorpseBones();
-    }
+        ResurrectUsingRequestDataFinish();
 
     if (m_DelayedOperations & DELAYED_SAVE_PLAYER)
-    {
         SaveToDB();
-    }
 
     if (m_DelayedOperations & DELAYED_SPELL_CAST_DESERTER)
-    {
         CastSpell(this, 26013, TRIGGERED_OLD_TRIGGERED);               // Deserter
-    }
 
     // we have executed ALL delayed ops, so clear the flag
     m_DelayedOperations = 0;
@@ -2970,13 +2949,10 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
                 }
             }
             // We do not learn previous rank if its owned by a talent we don't know
-            if (!talent)
-            {
-                if (!IsInWorld() || disabled)                   // at spells loading, no output, but allow save
-                    addSpell(prev_spell, active, true, true, disabled);
-                else                                            // at normal learning
-                    learnSpell(prev_spell, true);
-            }
+            if (!IsInWorld() || disabled || talent)        // at spells loading, no output, but allow save
+                addSpell(prev_spell, active, true, true, disabled);
+            else                                            // at normal learning
+                learnSpell(prev_spell, true);
         }
 
         PlayerSpell newspell;
@@ -3030,6 +3006,8 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
                             newspell.active = false;
                             if (newspell.state != PLAYERSPELL_NEW)
                                 newspell.state = PLAYERSPELL_CHANGED;
+                            playerSpell2.disabled = false;
+                            playerSpell2.state = PLAYERSPELL_CHANGED;
                         }
                     }
                 }
@@ -6072,7 +6050,7 @@ void Player::setFactionForRace(uint8 race)
 
 ReputationRank Player::GetReputationRank(uint32 faction) const
 {
-    FactionEntry const* factionEntry = sFactionStore.LookupEntry(faction);
+    FactionEntry const* factionEntry = sFactionStore.LookupEntry<FactionEntry>(faction);
     return GetReputationMgr().GetRank(factionEntry);
 }
 
@@ -6138,7 +6116,7 @@ int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 
 
     if (source == REPUTATION_SOURCE_QUEST && result && faction)
     {
-        if (FactionEntry const* factionEntry = sFactionStore.LookupEntry(faction))
+        if (FactionEntry const* factionEntry = sFactionStore.LookupEntry<FactionEntry>(faction))
         {
             int32 current = GetReputationMgr().GetReputation(factionEntry);
 
@@ -6173,7 +6151,7 @@ void Player::RewardReputation(Unit* pVictim, float rate)
     {
         int32 donerep1 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue1, 0, Rep->repfaction1, pVictim->getLevel());
         donerep1 = int32(donerep1 * rate);
-        FactionEntry const* factionEntry1 = sFactionStore.LookupEntry(Rep->repfaction1);
+        FactionEntry const* factionEntry1 = sFactionStore.LookupEntry<FactionEntry>(Rep->repfaction1);
         uint32 current_reputation_rank1 = GetReputationMgr().GetRank(factionEntry1);
         if (factionEntry1 && current_reputation_rank1 <= Rep->reputation_max_cap1)
             GetReputationMgr().ModifyReputation(factionEntry1, donerep1);
@@ -6181,7 +6159,7 @@ void Player::RewardReputation(Unit* pVictim, float rate)
         // Wiki: Team factions value divided by 2
         if (factionEntry1 && Rep->is_teamaward1)
         {
-            FactionEntry const* team1_factionEntry = sFactionStore.LookupEntry(factionEntry1->team);
+            FactionEntry const* team1_factionEntry = sFactionStore.LookupEntry<FactionEntry>(factionEntry1->team);
             if (team1_factionEntry)
                 GetReputationMgr().ModifyReputation(team1_factionEntry, donerep1 / 2);
         }
@@ -6191,7 +6169,7 @@ void Player::RewardReputation(Unit* pVictim, float rate)
     {
         int32 donerep2 = CalculateReputationGain(REPUTATION_SOURCE_KILL, Rep->repvalue2, 0, Rep->repfaction2, pVictim->getLevel());
         donerep2 = int32(donerep2 * rate);
-        FactionEntry const* factionEntry2 = sFactionStore.LookupEntry(Rep->repfaction2);
+        FactionEntry const* factionEntry2 = sFactionStore.LookupEntry<FactionEntry>(Rep->repfaction2);
         uint32 current_reputation_rank2 = GetReputationMgr().GetRank(factionEntry2);
         if (factionEntry2 && current_reputation_rank2 <= Rep->reputation_max_cap2)
             GetReputationMgr().ModifyReputation(factionEntry2, donerep2);
@@ -6199,7 +6177,7 @@ void Player::RewardReputation(Unit* pVictim, float rate)
         // Wiki: Team factions value divided by 2
         if (factionEntry2 && Rep->is_teamaward2)
         {
-            FactionEntry const* team2_factionEntry = sFactionStore.LookupEntry(factionEntry2->team);
+            FactionEntry const* team2_factionEntry = sFactionStore.LookupEntry<FactionEntry>(factionEntry2->team);
             if (team2_factionEntry)
                 GetReputationMgr().ModifyReputation(team2_factionEntry, donerep2 / 2);
         }
@@ -6219,7 +6197,7 @@ void Player::RewardReputation(Quest const* pQuest)
         {
             int32 rep = CalculateReputationGain(REPUTATION_SOURCE_QUEST, pQuest->RewRepValue[i], pQuest->RewMaxRepValue[i], pQuest->RewRepFaction[i], GetQuestLevelForPlayer(pQuest));
 
-            if (FactionEntry const* factionEntry = sFactionStore.LookupEntry(pQuest->RewRepFaction[i]))
+            if (FactionEntry const* factionEntry = sFactionStore.LookupEntry<FactionEntry>(pQuest->RewRepFaction[i]))
                 GetReputationMgr().ModifyReputation(factionEntry, rep);
         }
     }
@@ -7245,7 +7223,7 @@ void Player::DestroyItemWithOnStoreSpell(Item* item, uint32 spellId)
     }
 }
 
-void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType)
+void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType, bool spellProc)
 {
     Item* item = GetWeaponForAttack(attType, true, true);
     if (!item)
@@ -7340,6 +7318,11 @@ void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType)
             // not allow proc extra attack spell at extra attack
             if (m_extraAttacks && IsSpellHaveEffect(spellInfo, SPELL_EFFECT_ADD_EXTRA_ATTACKS))
                 continue;
+
+            // some weapon enchantments have proc flags which need to be checked
+            if (spellInfo->procFlags)
+                if (!(spellInfo->procFlags & PROC_FLAG_SUCCESSFUL_MELEE_SPELL_HIT) && spellProc)
+                    continue;
 
             // Use first rank to access spell item enchant procs
             float ppmRate = sSpellMgr.GetItemEnchantProcChance(spellInfo->Id);
@@ -7691,6 +7674,9 @@ void Player::SendInitWorldStates(uint32 zoneid, uint32 areaid) const
                 bg->FillInitialWorldStates(data, count);
             break;
     }
+
+    if (InstanceData* instanceData = GetMap()->GetInstanceData())
+        instanceData->FillInitialWorldStates(data, count, zoneid, areaid);
 
     data.put<uint16>(count_pos, count);                     // set actual world state amount
 
@@ -11363,13 +11349,6 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
                     break;
                 case ITEM_ENCHANTMENT_TYPE_DAMAGE:
                     // processed in Player::_ApplyWeaponDependentAuraMods
-                    //if (item->GetSlot() == EQUIPMENT_SLOT_MAINHAND)
-                    //    HandleStatModifier(UNIT_MOD_DAMAGE_MAINHAND, TOTAL_VALUE, float(enchant_amount), apply);
-                    //else if (item->GetSlot() == EQUIPMENT_SLOT_OFFHAND)
-                    //    HandleStatModifier(UNIT_MOD_DAMAGE_OFFHAND, TOTAL_VALUE, float(enchant_amount), apply);
-                    //else if (item->GetSlot() == EQUIPMENT_SLOT_RANGED)
-                    //    HandleStatModifier(UNIT_MOD_DAMAGE_RANGED, TOTAL_VALUE, float(enchant_amount), apply);
-                    //UpdateDamagePhysical
                     if (item->GetSlot() == EQUIPMENT_SLOT_MAINHAND)
                     {
                         SetEnchantmentModifier(enchant_amount, BASE_ATTACK, apply);
@@ -12677,7 +12656,7 @@ void Player::AddQuest(Quest const* pQuest, Object* questGiver)
     }
 
     if (pQuest->GetRepObjectiveFaction())
-        if (FactionEntry const* factionEntry = sFactionStore.LookupEntry(pQuest->GetRepObjectiveFaction()))
+        if (FactionEntry const* factionEntry = sFactionStore.LookupEntry<FactionEntry>(pQuest->GetRepObjectiveFaction()))
             GetReputationMgr().SetVisible(factionEntry);
 
     uint32 qtime = 0;
@@ -19785,7 +19764,7 @@ uint32 Player::GetPureWeaponSkillValue(WeaponAttackType attType) const
     return GetPureSkillValue(skill);
 }
 
-void Player::ResurectUsingRequestData()
+void Player::ResurrectUsingRequestDataInit()
 {
     /// Teleport before resurrecting by player, otherwise the player might get attacked from creatures near his corpse
     if (m_resurrectGuid.IsPlayer())
@@ -19793,12 +19772,18 @@ void Player::ResurectUsingRequestData()
 
     // we cannot resurrect player when we triggered far teleport
     // player will be resurrected upon teleportation
-    if (IsBeingTeleportedFar())
+    if (IsBeingTeleported())
     {
         ScheduleDelayedOperation(DELAYED_RESURRECT_PLAYER);
         return;
     }
 
+    // Redundant unless at some point we dont teleport on rezzurect
+    ResurrectUsingRequestDataFinish();
+}
+
+void Player::ResurrectUsingRequestDataFinish()
+{
     ResurrectPlayer(0.0f, false);
 
     if (GetMaxHealth() > m_resurrectHealth)
@@ -19979,19 +19964,19 @@ Player* Player::GetNextRaidMemberWithLowestLifePercentage(float radius, AuraType
 
         if (target && target != this)
         {
-            // First not picked
-            if (!lowestPercentagePlayer)
-            {
-                lowestPercentagePlayer = target;
-                lowestPercentage = target->GetHealthPercent();
-                continue;
-            }
-
+            float x, y, z;
+            GetPosition(x, y, z);
             // CanAssist check duel and controlled by enemy
-            if (IsWithinDistInMap(target, radius) &&
+            if (target->IsWithinDist3d(x, y, z, radius) &&
                     !target->HasInvisibilityAura() && CanAssist(target) && !target->HasAuraType(noAuraType))
             {
-                if (target->GetHealthPercent() < lowestPercentage)
+                // First not picked
+                if (!lowestPercentagePlayer)
+                {
+                    lowestPercentagePlayer = target;
+                    lowestPercentage = target->GetHealthPercent();
+                }
+                else if (target->GetHealthPercent() < lowestPercentage)
                 {
                     lowestPercentagePlayer = target;
                     lowestPercentage = target->GetHealthPercent();
@@ -21056,8 +21041,8 @@ void Player::AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration /*= 0*/,
 void Player::AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto /*= nullptr*/, bool permanent /*= false*/, uint32 forcedDuration /*= 0*/)
 {
     uint32 spellCategory = spellEntry.Category;
-    int32 recTime = spellEntry.RecoveryTime; // int because of spellmod calculations
-    int32 categoryRecTime = spellEntry.CategoryRecoveryTime; // int because of spellmod calculations
+    uint32 recTime = spellEntry.RecoveryTime; // int because of spellmod calculations
+    uint32 categoryRecTime = spellEntry.CategoryRecoveryTime; // int because of spellmod calculations
     uint32 itemId = 0;
 
     if (itemProto)

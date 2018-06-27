@@ -1579,6 +1579,191 @@ CreatureAI* GetAI_npc_the_cleaner(Creature* pCreature)
     return new npc_the_cleanerAI(pCreature);
 }
 
+enum
+{
+    // Earth ele spells
+    SPELL_ANGERED_EARTH = 36213,
+    // Fire ele spells
+    SPELL_FIRE_SHIELD   = 13377, // ticks 13376
+    SPELL_FIRE_BLAST    = 13339,
+    SPELL_FIRE_NOVA     = 12470,
+};
+
+enum FireElementalActions
+{
+    ELEMENTAL_ACTION_FIRE_NOVA,
+    ELEMENTAL_ACTION_FIRE_BLAST,
+    ELEMENTAL_ACTION_MAX,
+};
+
+struct npc_shaman_fire_elementalAI : public ScriptedAI
+{
+    npc_shaman_fire_elementalAI(Creature* creature) : ScriptedAI(creature)
+    {
+        m_fireNovaParams.range.minRange = 0;
+        m_fireNovaParams.range.maxRange = 10;
+        Reset();
+    }
+
+    uint32 m_actionTimers[ELEMENTAL_ACTION_MAX];
+    bool m_actionReadyStatus[ELEMENTAL_ACTION_MAX];
+
+    SelectAttackingTargetParams m_fireNovaParams;
+
+    void Reset() override
+    {
+        DoCastSpellIfCan(m_creature, SPELL_FIRE_SHIELD, CAST_AURA_NOT_PRESENT | CAST_TRIGGERED);
+
+        m_actionTimers[ELEMENTAL_ACTION_FIRE_NOVA] = 10000;
+        m_actionTimers[ELEMENTAL_ACTION_FIRE_BLAST] = 5000;
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+            return;
+
+        for (uint32 i = 0; i < ELEMENTAL_ACTION_MAX; ++i)
+        {
+            if (!m_actionReadyStatus[i])
+            {
+                if (m_actionTimers[i] <= diff)
+                {
+                    m_actionTimers[i] = 0;
+                    m_actionReadyStatus[i] = true;
+                }
+                else
+                    m_actionTimers[i] -= diff;
+            }
+        }
+
+        if (m_creature->IsNonMeleeSpellCasted(false) || !CanExecuteCombatAction())
+            return;
+
+        if (m_actionReadyStatus[ELEMENTAL_ACTION_FIRE_NOVA])
+        {
+            std::vector<Unit*> unitVector;
+            m_creature->SelectAttackingTargets(unitVector, ATTACKING_TARGET_ALL_SUITABLE, uint32(0), uint32(0), SELECT_FLAG_RANGE_AOE_RANGE, m_fireNovaParams);
+            if (unitVector.size() >= 1)
+            {
+                if (DoCastSpellIfCan(nullptr, SPELL_FIRE_NOVA) == CAST_OK)
+                {
+                    m_actionTimers[ELEMENTAL_ACTION_FIRE_NOVA] = 15000;
+                    m_actionReadyStatus[ELEMENTAL_ACTION_FIRE_NOVA] = false;
+                    return;
+                }
+            }
+        }
+        else if (m_actionReadyStatus[ELEMENTAL_ACTION_FIRE_BLAST])
+        {
+            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_FIRE_BLAST) == CAST_OK)
+            {
+                m_actionTimers[ELEMENTAL_ACTION_FIRE_BLAST] = 15000;
+                m_actionReadyStatus[ELEMENTAL_ACTION_FIRE_BLAST] = false;
+                return;
+            }
+        }
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+struct npc_shaman_earth_elementalAI : public ScriptedAI
+{
+    npc_shaman_earth_elementalAI(Creature* creature) : ScriptedAI(creature)
+    {
+        m_angeredEarthParams.range.minRange = 0;
+        m_angeredEarthParams.range.maxRange = 15;
+        Reset();
+    }
+
+    uint32 m_angeredEarthTimer;
+    SelectAttackingTargetParams m_angeredEarthParams;
+
+    void Reset() override
+    {
+        m_angeredEarthTimer = 0;
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+            return;
+
+        if (m_angeredEarthTimer <= diff)
+        {
+            m_angeredEarthTimer = 0;
+            std::vector<Unit*> unitVector;
+            m_creature->SelectAttackingTargets(unitVector, ATTACKING_TARGET_ALL_SUITABLE, uint32(0), uint32(0), SELECT_FLAG_RANGE_AOE_RANGE, m_angeredEarthParams);
+            if (unitVector.size() >= 1)
+                if (DoCastSpellIfCan(nullptr, SPELL_ANGERED_EARTH) == CAST_OK)
+                    m_angeredEarthTimer = 15000;
+        }
+        else
+            m_angeredEarthTimer -= diff;
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+CreatureAI* GetAI_npc_shaman_fire_elemental(Creature* pCreature)
+{
+    return new npc_shaman_fire_elementalAI(pCreature);
+}
+
+CreatureAI* GetAI_npc_shaman_earth_elemental(Creature* pCreature)
+{
+    return new npc_shaman_earth_elementalAI(pCreature);
+}
+
+enum
+{
+    SPELL_DEADLY_POISON_PASSIVE = 34657,
+    SPELL_MIND_NUMBING_POISON   = 25810,
+    SPELL_CRIPPLING_POISON      = 25809,
+
+    // SPELL_RANDOM_AGGRO = 34701 // unk purpose
+};
+
+struct npc_snakesAI : public ScriptedAI
+{
+    npc_snakesAI(Creature* creature) : ScriptedAI(creature) { Reset(); }
+
+    uint32 m_spellTimer;
+
+    void Reset() override
+    {
+        m_spellTimer = 3000;
+
+        DoCastSpellIfCan(nullptr, SPELL_DEADLY_POISON_PASSIVE, CAST_AURA_NOT_PRESENT | CAST_TRIGGERED);
+    }
+
+    void UpdateAI(const uint32 diff) override
+    {
+        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+            return;
+
+        if (m_spellTimer <= diff)
+        {
+            if (urand(0, 2) == 0)
+            {
+                uint32 spellId = urand(0, 1) ? SPELL_MIND_NUMBING_POISON : SPELL_CRIPPLING_POISON;
+                DoCastSpellIfCan(m_creature->getVictim(), spellId);
+            }
+            m_spellTimer = 3000;
+        }
+        else
+            m_spellTimer -= diff;
+
+        DoMeleeAttackIfReady();
+    }
+};
+
+CreatureAI* GetAI_npc_snakes(Creature* pCreature)
+{
+    return new npc_snakesAI(pCreature);
+}
+
 void AddSC_npcs_special()
 {
     Script* pNewScript;
@@ -1641,5 +1826,20 @@ void AddSC_npcs_special()
     pNewScript = new Script;
     pNewScript->Name = "npc_the_cleaner";
     pNewScript->GetAI = &GetAI_npc_the_cleaner;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_shaman_fire_elemental";
+    pNewScript->GetAI = &GetAI_npc_shaman_fire_elemental;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_shaman_earth_elemental";
+    pNewScript->GetAI = &GetAI_npc_shaman_earth_elemental;
+    pNewScript->RegisterSelf();
+
+    pNewScript = new Script;
+    pNewScript->Name = "npc_snakes";
+    pNewScript->GetAI = &GetAI_npc_snakes;
     pNewScript->RegisterSelf();
 }
