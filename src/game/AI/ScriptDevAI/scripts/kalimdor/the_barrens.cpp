@@ -86,7 +86,7 @@ struct npc_giltharesAI : public npc_escortAI
                 break;
             case 53:
                 DoScriptText(SAY_GIL_FREED, m_creature, pPlayer);
-                pPlayer->GroupEventHappens(QUEST_FREE_FROM_HOLD, m_creature);
+                pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_FREE_FROM_HOLD, m_creature);
                 break;
         }
     }
@@ -112,7 +112,7 @@ struct npc_giltharesAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_gilthares(Creature* pCreature)
+UnitAI* GetAI_npc_gilthares(Creature* pCreature)
 {
     return new npc_giltharesAI(pCreature);
 }
@@ -161,7 +161,6 @@ struct npc_taskmaster_fizzuleAI : public ScriptedAI
         if (m_uiResetTimer)
         {
             m_creature->RemoveAllAurasOnEvade();
-            m_creature->DeleteThreatList();
             m_creature->CombatStop(true);
             m_creature->LoadCreatureAddon(true);
 
@@ -214,7 +213,7 @@ struct npc_taskmaster_fizzuleAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_taskmaster_fizzule(Creature* pCreature)
+UnitAI* GetAI_npc_taskmaster_fizzule(Creature* pCreature)
 {
     return new npc_taskmaster_fizzuleAI(pCreature);
 }
@@ -431,7 +430,7 @@ struct npc_twiggy_flatheadAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_twiggy_flathead(Creature* pCreature)
+UnitAI* GetAI_npc_twiggy_flathead(Creature* pCreature)
 {
     return new npc_twiggy_flatheadAI(pCreature);
 }
@@ -574,7 +573,7 @@ struct npc_wizzlecranks_shredderAI : public npc_escortAI
                         case 3:
                             if (Player* pPlayer = GetPlayerForEscort())
                             {
-                                pPlayer->GroupEventHappens(QUEST_ESCAPE, m_creature);
+                                pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ESCAPE, m_creature);
                                 m_creature->SummonCreature(NPC_PILOT_WIZZ, 0.0f, 0.0f, 0.0f, 0.0f, TEMPSPAWN_TIMED_DESPAWN, 180000);
                             }
                             break;
@@ -607,7 +606,7 @@ bool QuestAccept_npc_wizzlecranks_shredder(Player* pPlayer, Creature* pCreature,
     return true;
 }
 
-CreatureAI* GetAI_npc_wizzlecranks_shredder(Creature* pCreature)
+UnitAI* GetAI_npc_wizzlecranks_shredder(Creature* pCreature)
 {
     return new npc_wizzlecranks_shredderAI(pCreature);
 }
@@ -628,7 +627,7 @@ struct npc_gallywixAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_gallywix(Creature* pCreature)
+UnitAI* GetAI_npc_gallywix(Creature* pCreature)
 {
     return new npc_gallywixAI(pCreature);
 }

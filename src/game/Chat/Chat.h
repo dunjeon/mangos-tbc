@@ -41,6 +41,7 @@ class MailDraft;
 class Object;
 class GameObject;
 class Creature;
+class Pet;
 class Player;
 class Unit;
 
@@ -252,6 +253,7 @@ class ChatHandler
         bool HandleGameObjectDeleteCommand(char* args);
         bool HandleGameObjectMoveCommand(char* args);
         bool HandleGameObjectNearCommand(char* args);
+        bool HandleGameObjectNearSpawnedCommand(char* args);
         bool HandleGameObjectPhaseCommand(char* args);
         bool HandleGameObjectTargetCommand(char* args);
         bool HandleGameObjectTurnCommand(char* args);
@@ -360,6 +362,7 @@ class ChatHandler
         bool HandleNpcFlagCommand(char* args);
         bool HandleNpcFollowCommand(char* args);
         bool HandleNpcInfoCommand(char* args);
+        bool HandleNpcThreatCommand(char* args);
         bool HandleNpcMoveCommand(char* args);
         bool HandleNpcPlayEmoteCommand(char* args);
         bool HandleNpcSayCommand(char* args);
@@ -628,9 +631,12 @@ class ChatHandler
         //! Development Commands
         bool HandleSaveAllCommand(char* args);
 
+        bool HandlePetLevelLoyaltyCommand(char* args);
+
         Player*   getSelectedPlayer() const;
-        Creature* getSelectedCreature() const;
         Unit*     getSelectedUnit(bool self = true) const;
+        Creature* getSelectedCreature() const;
+        Pet*      getSelectedPet() const;
 
         // extraction different type params from args string, all functions update (char** args) to first unparsed tail symbol at return
         static void  SkipWhiteSpaces(char** args);

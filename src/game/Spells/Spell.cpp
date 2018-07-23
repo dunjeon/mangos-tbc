@@ -386,6 +386,7 @@ Spell::Spell(Unit* caster, SpellEntry const* info, uint32 triggeredFlags, Object
     m_triggerAutorepeat = !!(triggeredFlags & TRIGGERED_AUTOREPEAT);
     m_doNotProc = triggeredFlags & TRIGGERED_DO_NOT_PROC;
     m_petCast = !!(triggeredFlags & TRIGGERED_PET_CAST);
+    m_notifyAI = !!(triggeredFlags & TRIGGERED_NORMAL_COMBAT_CAST);
 
     m_reflectable = IsReflectableSpell(m_spellInfo);
 
@@ -826,6 +827,9 @@ void Spell::FillTargetMap()
             }
         }
 
+        // Secial target filter before adding targets to list
+        FilterTargetMap(tmpUnitLists[effToIndex[i]], SpellEffectIndex(i));
+
         for (UnitList::const_iterator iunit = tmpUnitLists[effToIndex[i]].begin(); iunit != tmpUnitLists[effToIndex[i]].end(); ++iunit)
             AddUnitTarget((*iunit), SpellEffectIndex(i));
     }
@@ -982,8 +986,9 @@ void Spell::AddUnitTarget(Unit* pVictim, SpellEffectIndex effIndex, CheckExcepti
     {
         if (targetGUID == ihit->targetGUID)                 // Found in list
         {
+            ihit->effectMask |= 1 << effIndex;
             if (!immuned)
-                ihit->effectMask |= 1 << effIndex;          // Add only effect mask if not immuned
+                ihit->effectHitMask |= 1 << effIndex;          // Add only effect mask if not immuned
             return;
         }
     }
@@ -993,7 +998,8 @@ void Spell::AddUnitTarget(Unit* pVictim, SpellEffectIndex effIndex, CheckExcepti
     // Get spell hit result on target
     TargetInfo target;
     target.targetGUID = targetGUID;                         // Store target GUID
-    target.effectMask = immuned ? 0 : (1 << effIndex);      // Store index of effect if not immuned
+    target.effectHitMask = immuned && !exception == EXCEPTION_MAGNET ? 0 : (1 << effIndex); // Store not immuned effects
+    target.effectMask = (1 << effIndex);                    // Store index of effect
     target.processed  = false;                              // Effects not applied on target
     target.magnet = (exception == EXCEPTION_MAGNET);
 
@@ -1149,7 +1155,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
     target->processed = true;                               // Target checked in apply effects procedure
 
     // Get mask of effects for target
-    uint32 effectMask = target->effectMask;
+    uint32 effectMask = target->effectHitMask;
 
     Unit* unit = m_caster->GetObjectGuid() == target->targetGUID ? m_caster : ObjectAccessor::GetUnit(*m_caster, target->targetGUID);
     if (!unit)
@@ -1172,7 +1178,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
     uint32 procAttacker;
     uint32 procVictim;
     uint32 procEx       = PROC_EX_NONE;
-    PrepareMasksForProcSystem(effectMask, procAttacker, procVictim, caster, unitTarget);
+    PrepareMasksForProcSystem(target->effectMask, procAttacker, procVictim, caster, unitTarget);
     if (target->magnet)
         procEx |= PROC_EX_MAGNET;
 
@@ -1180,7 +1186,7 @@ void Spell::DoAllEffectOnTarget(TargetInfo* target)
     // for example caster bonus or animation,
     // except miss case where will assigned PROC_EX_* flags later
     if (((procAttacker | procVictim) & NEGATIVE_TRIGGER_MASK) &&
-            !(target->effectMask & m_negativeEffectMask) && missInfo == SPELL_MISS_NONE)
+            !(target->effectHitMask & m_negativeEffectMask) && missInfo == SPELL_MISS_NONE)
     {
         procAttacker = PROC_FLAG_NONE;
         procVictim   = PROC_FLAG_NONE;
@@ -1532,7 +1538,7 @@ void Spell::DoAllEffectOnTarget(ItemTargetInfo* target)
 void Spell::HandleDelayedSpellLaunch(TargetInfo* target)
 {
     // Get mask of effects for target
-    uint32 mask = target->effectMask;
+    uint32 mask = target->effectHitMask;
 
     Unit* unit = m_caster->GetObjectGuid() == target->targetGUID ? m_caster : ObjectAccessor::GetUnit(*m_caster, target->targetGUID);
     if (!unit)
@@ -1613,13 +1619,13 @@ bool Spell::IsAliveUnitPresentInTargetList()
 
     for (TargetList::const_iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
     {
-        if (ihit->missCondition == SPELL_MISS_NONE && (needAliveTargetMask & ihit->effectMask))
+        if (ihit->missCondition == SPELL_MISS_NONE && (needAliveTargetMask & ihit->effectHitMask))
         {
             Unit* unit = m_caster->GetObjectGuid() == ihit->targetGUID ? m_caster : ObjectAccessor::GetUnit(*m_caster, ihit->targetGUID);
 
             // either unit is alive and normal spell, or unit dead and deathonly-spell
             if (unit && (unit->isAlive() != IsDeathOnlySpell(m_spellInfo)))
-                needAliveTargetMask &= ~ihit->effectMask;   // remove from need alive mask effect that have alive target
+                needAliveTargetMask &= ~ihit->effectHitMask;   // remove from need alive mask effect that have alive target
         }
     }
 
@@ -1694,8 +1700,8 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
 
     switch (targetMode)
     {
-        case TARGET_RANDOM_DEST_LOC:
-        case TARGET_RANDOM_NEARBY_LOC:
+        case TARGET_RANDOM_DEST_TARGET:
+        case TARGET_RANDOM_DEST_CASTER:
             // special case for Fatal Attraction (BT, Mother Shahraz)
             if (m_spellInfo->Id == 40869)
                 radius = 30.0f;
@@ -1703,12 +1709,22 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             // Get a random point in circle. Use sqrt(rand) to correct distribution when converting polar to Cartesian coordinates.
             radius *= sqrtf(rand_norm_f());
         // no 'break' expected since we use code in case TARGET_RANDOM_CIRCUMFERENCE_POINT!!!
-        case TARGET_RANDOM_CIRCUMFERENCE_POINT:
+        case TARGET_RANDOM_DEST_TARGET_CIRCUMFERENCE:
+        case TARGET_RANDOM_DEST_CASTER_CIRCUMFERENCE:
         {
+            Unit* target;
+            switch (targetMode)
+            {
+                case TARGET_RANDOM_DEST_TARGET:
+                case TARGET_RANDOM_DEST_TARGET_CIRCUMFERENCE:
+                    target = m_targets.getUnitTarget() ? m_targets.getUnitTarget() : m_caster; break;
+                default:
+                    target = m_caster; break;
+            }
             // Get a random point AT the circumference
             float angle = 2.0f * M_PI_F * rand_norm_f();
             float dest_x, dest_y, dest_z;
-            m_caster->GetClosePoint(dest_x, dest_y, dest_z, 0.0f, radius, angle);
+            target->GetClosePoint(dest_x, dest_y, dest_z, 0.0f, radius, angle, nullptr);
             m_targets.setDestination(dest_x, dest_y, dest_z);
 
             // This targetMode is often used as 'last' implicitTarget for positive spells, that just require coordinates
@@ -2074,6 +2090,23 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
                     // Select friendly targets for positive effect
                     if (IsPositiveEffect(m_spellInfo, effIndex))
                         targetB = SPELL_TARGETS_ASSISTABLE;
+                    break;
+            }
+
+            // 30571 - Quake - Target Trigger is supposed to knockback players, spell has SPELL_ATTR_EX3_TARGET_ONLY_PLAYER, possibly need to consult Faction from sniffs and tweak that
+            // TODO: In future try to find out if neutral target types shouldnt have this
+            switch (m_spellInfo->Id)
+            {
+                case 39384:
+                case 30659:
+                case 36823:
+                case 39497: // remove weapons on kael, should hit all players, including the ones MCed
+                case 30571: // this spell needs custom targeting and is handled later, in sniff faction has 35 and no matter to what positive effect is set it doesnt work
+                case 39977: // needs to hit all targets, due to being neutral spell, it checks for specific aura
+                    targetB = SPELL_TARGETS_ALL;
+                    break;
+                case 45339:
+                    targetB = SPELL_TARGETS_AOE_ATTACKABLE;
                     break;
             }
 
@@ -2774,7 +2807,6 @@ void Spell::SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList&
             break;
         }
         case TARGET_DEST_CASTER_FRONT_LEAP:
-        case TARGET_RANDOM_CIRCUMFERENCE_AROUND_TARGET:
         {
             float dist = GetSpellRadius(sSpellRadiusStore.LookupEntry(m_spellInfo->EffectRadiusIndex[effIndex]));
             const float IN_OR_UNDER_LIQUID_RANGE = 0.8f;                // range to make player under liquid or on liquid surface from liquid level
@@ -3104,7 +3136,13 @@ void Spell::Prepare()
     ReSetTimer();
 
     if (!m_IsTriggeredSpell)
+    {
         m_caster->RemoveAurasOnCast(m_spellInfo);
+
+        // Orientation changes inside
+        if (m_notifyAI && m_caster->AI())
+            m_caster->AI()->OnSpellCastStateChange(m_spellInfo, true, m_targets.getUnitTarget());
+    }
 
     // add non-triggered (with cast time and without)
     if (!m_IsTriggeredSpell)
@@ -3197,6 +3235,9 @@ void Spell::cancel()
 void Spell::cast(bool skipCheck)
 {
     SetExecutedCurrently(true);
+
+    if (m_notifyAI && m_caster->AI())
+        m_caster->AI()->OnSpellCastStateChange(m_spellInfo, false);
 
     if (!m_caster->CheckAndIncreaseCastCounter())
     {
@@ -4061,7 +4102,7 @@ void Spell::WriteSpellGoTargets(WorldPacket& data)
 
     for (TargetList::iterator ihit = m_UniqueTargetInfo.begin(); ihit != m_UniqueTargetInfo.end(); ++ihit)
     {
-        if (ihit->effectMask == 0)                          // No effect apply - all immuned add state
+        if (ihit->effectHitMask == 0)                       // No effect apply - all immuned add state
         {
             // possibly SPELL_MISS_IMMUNE2 for this??
             ihit->missCondition = SPELL_MISS_IMMUNE2;
@@ -4071,7 +4112,7 @@ void Spell::WriteSpellGoTargets(WorldPacket& data)
         {
             ++hit;
             data << ihit->targetGUID;
-            m_needAliveTargetMask |= ihit->effectMask;
+            m_needAliveTargetMask |= ihit->effectHitMask;
         }
         else
         {
@@ -4180,7 +4221,7 @@ void Spell::SendChannelStart(uint32 duration)
     {
         for (TargetList::const_iterator itr = m_UniqueTargetInfo.begin(); itr != m_UniqueTargetInfo.end(); ++itr)
         {
-            if ((itr->effectMask & (1 << EFFECT_INDEX_0)) && itr->reflectResult == SPELL_MISS_NONE &&
+            if ((itr->effectHitMask & (1 << EFFECT_INDEX_0)) && itr->reflectResult == SPELL_MISS_NONE &&
                     itr->targetGUID != m_caster->GetObjectGuid())
             {
                 target = ObjectAccessor::GetUnit(*m_caster, itr->targetGUID);
@@ -4546,7 +4587,7 @@ void Spell::CastPreCastSpells(Unit* target)
 Unit* Spell::GetPrefilledUnitTargetOrUnitTarget(SpellEffectIndex effIndex) const
 {
     for (TargetList::const_iterator itr = m_UniqueTargetInfo.begin(); itr != m_UniqueTargetInfo.end(); ++itr)
-        if (itr->effectMask & (1 << effIndex))
+        if (itr->effectHitMask & (1 << effIndex))
             return m_caster->GetMap()->GetUnit(itr->targetGUID);
 
     return m_targets.getUnitTarget();
@@ -4568,7 +4609,7 @@ SpellCastResult Spell::CheckCast(bool strict)
         return SPELL_FAILED_CASTER_DEAD;
 
     // check global cooldown
-    if (strict && !m_IsTriggeredSpell && m_caster->HaveGCD(m_spellInfo))
+    if (strict && !m_IsTriggeredSpell && m_caster->HasGCD(m_spellInfo))
         return SPELL_FAILED_NOT_READY;
 
     // only allow triggered spells if at an ended battleground
@@ -5879,6 +5920,13 @@ SpellCastResult Spell::CheckCast(bool strict)
                 if (!(target.GetEntry() == 16943 || target.GetEntry() == 20928))  // Mental Interference can be cast only on these two targets
                     return SPELL_FAILED_BAD_TARGETS;
             break;
+        case 40472: // Booterang -  Must have aura Defiant And Enraged
+        {
+            Unit* target = m_targets.getUnitTarget();
+            if (!target || !target->HasAura(40735))
+                return SPELL_FAILED_BAD_TARGETS;
+            break;
+        }
     }
 
     if (m_caster->GetTypeId() == TYPEID_PLAYER && m_spellInfo->HasAttribute(SPELL_ATTR_EX2_TAME_BEAST))
@@ -6875,10 +6923,38 @@ bool Spell::CheckTargetScript(Unit* target, SpellEffectIndex eff) const
             if (target->GetTypeId() == TYPEID_PLAYER && target == m_caster->getVictim())
                 return false;
             break;
-        case 30469:                                         // Nether Beam special include only players and boss
+        case 30469:                                         // Nether Beam - Netherspite - special include only players and boss
             if (target->GetTypeId() == TYPEID_UNIT && target->GetEntry() != 15689)
                 return false;
+            switch (m_triggeredByAuraSpell->Id)
+            {
+                case 30396: // Perseverance passive
+                    if (target->HasAura(38637))
+                        return false;
+                    break;
+                case 30397: // Serenity passive
+                    if (target->HasAura(38638))
+                        return false;
+                    break;
+                case 30398: // Dominance passive
+                    if (target->HasAura(38639))
+                        return false;
+                    break;
+            }
+            if (!target->isAlive())
+                return false;
             break;
+        case 30835:                                         // Infernal Relay - Malchezaar - must only hit unused infernals
+        {
+            Creature* creature = nullptr;
+            MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck creature_check(*target, 17646, true, false, 2.0f, true);
+            MaNGOS::CreatureLastSearcher<MaNGOS::NearestCreatureEntryWithLiveStateInObjectRangeCheck> searcher(creature, creature_check);
+            Cell::VisitGridObjects(target, searcher, 2.0f);
+            if (creature)
+                if (target->GetPositionX() == creature->GetPositionX() && target->GetPositionY() == creature->GetPositionY())
+                    return false;
+            break;
+        }
         case 33812:                                         // Gruul the Dragonkiller - Hurtful Strike Primer
             if (target->GetTypeId() != TYPEID_PLAYER || !m_caster->CanReachWithMeleeAttack(target))
                 return false;
@@ -6904,6 +6980,10 @@ bool Spell::CheckTargetScript(Unit* target, SpellEffectIndex eff) const
                 return false;
             break;
         }
+        case 38782:											// Druid Signal
+            if (target->HasAura(38776) || target->HasAura(39158)) // Don't target druids that have already been summoned by another player
+                return false;
+            break;
         case 39090:                                         // Positive Charge
             if (!target->HasAura(39091))                    // Only deal damage if target has Negative Charge
                 return false;
@@ -6928,7 +7008,7 @@ bool Spell::CheckTargetScript(Unit* target, SpellEffectIndex eff) const
             if (target->GetTypeId() != TYPEID_UNIT || target->GetEntry() != 23040 || m_caster->GetTypeId() != TYPEID_UNIT || m_caster->GetEntry() != 23040)
                 return false;
 
-            uint8 pBunnyId = ((Creature*)m_caster)->AI()->GetScriptData();
+            uint8 pBunnyId = m_caster->AI()->GetScriptData();
 
             std::list<Creature*> creatureList;
             MaNGOS::AllCreaturesOfEntryInRangeCheck check(target, 23040, 60.f);
@@ -6938,8 +7018,8 @@ bool Spell::CheckTargetScript(Unit* target, SpellEffectIndex eff) const
             for (auto& creature : creatureList)
             {
                 // Check that both have AI() before accessing
-                if (creature->AI() && ((Creature*)target)->AI() &&
-                        creature->AI()->GetScriptData() == ((Creature*)target)->AI()->GetScriptData())
+                if (creature->AI() && target->AI() &&
+                        creature->AI()->GetScriptData() == target->AI()->GetScriptData())
                     pBunnyId = creature->AI()->GetScriptData();
             }
 
@@ -7116,7 +7196,7 @@ bool Spell::IsTriggeredSpellWithRedundantCastTime() const
 bool Spell::HaveTargetsForEffect(SpellEffectIndex effect) const
 {
     for (TargetList::const_iterator itr = m_UniqueTargetInfo.begin(); itr != m_UniqueTargetInfo.end(); ++itr)
-        if (itr->effectMask & (1 << effect))
+        if (itr->effectHitMask & (1 << effect))
             return true;
 
     for (GOTargetList::const_iterator itr = m_UniqueGOTargetInfo.begin(); itr != m_UniqueGOTargetInfo.end(); ++itr)
@@ -7542,6 +7622,39 @@ void Spell::GetSpellRangeAndRadius(SpellEffectIndex effIndex, float& radius, uin
         }
         default:
             break;
+    }
+}
+
+void Spell::FilterTargetMap(UnitList& filterUnitList, SpellEffectIndex effIndex)
+{
+    switch (m_spellInfo->Id)
+    {
+        case 30469: // Nether Beam - Netherspite - Picks closest target - can maybe be reused in future
+        {
+            auto itr = filterUnitList.begin();
+            if (itr == filterUnitList.end())
+                return;
+            float closestDistance = (*itr)->GetDistance(m_caster->GetPositionX(), m_caster->GetPositionY(), m_caster->GetPositionZ(), DIST_CALC_BOUNDING_RADIUS);
+            Unit* closestUnit = *itr;
+            ++itr;
+
+            for (UnitList::iterator itr = filterUnitList.begin(); itr != filterUnitList.end(); ++itr)
+            {
+                float dist = (*itr)->GetDistance(m_caster->GetPositionX(), m_caster->GetPositionY(), m_caster->GetPositionZ(), DIST_CALC_BOUNDING_RADIUS);
+                if (closestDistance > dist && *itr != closestUnit)
+                {
+                    closestDistance = dist;
+                    closestUnit = *itr;
+                }
+            }
+
+            if (!closestUnit)
+                return;
+
+            filterUnitList.clear();
+            filterUnitList.push_back(closestUnit);
+            return;
+        }
     }
 }
 

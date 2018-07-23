@@ -42,6 +42,25 @@ UPDATE spell_template SET AttributesServerside= AttributesServerside|1 WHERE id 
 
 UPDATE spell_template SET EffectItemType2=268435456 WHERE Id IN(16106); -- all ranks except rank 3 have mask
 
+INSERT INTO spell_template(Id, SpellName, SpellIconID, Attributes, AttributesEx, DurationIndex, Effect1, EffectImplicitTargetA1, EffectApplyAuraName1, EffectMiscValue1, Effect2, EffectImplicitTargetA2, EffectApplyAuraName2, EffectMiscValue2, IsServerSide) VALUES
+(20612,'Stoneform',93,0x00000180,0x00018000,31,6,1,77,15,6,1,41,3,1); -- missing stoneform spell
+
+-- Serverside spell added
+-- Player from time to time will summon ghost of Darrowshire Poltergeist
+INSERT INTO spell_template (Id, Attributes, AttributesEx, DurationIndex, Effect1, EffectImplicitTargetA1, EffectImplicitTargetB1, EffectRadiusIndex1, EffectMiscValue1, EffectMiscValueB1, SpellName) VALUES
+(17694, 0x00000100, 0x10000000, 4, 28, 47, 0, 9, 11296, 61, 'Summon Darrowshire Poltergeist (DND)');
+
+-- The Exorcism of Colonel Jules
+INSERT INTO spell_template (Id, SchoolMask, Attributes, CastingTimeIndex, procChance, DurationIndex, rangeIndex, EquippedItemClass, Effect1, EffectImplicitTargetA1, EffectMiscValue1, SpellIconID, DmgMultiplier1, EffectMiscValueB1, SpellName) VALUES
+(39305, 1, 256, 1, 101, 64, 1, -1, 28, 18, 22507, 1, 1, 64, 'Summon Flying Skull');
+INSERT INTO spell_template (Id, SchoolMask, Attributes, AttributesEx, AttributesEx2, AttributesEx3, CastingTimeIndex, procChance, DurationIndex, rangeIndex, EquippedItemClass, Effect1, EffectImplicitTargetA1, EffectApplyAuraName1, SpellIconID, DmgMultiplier1, SpellName) VALUES
+(39304, 1, 8388864, 268435456, 1, 1048576, 1, 101, 21, 1, -1, 6, 1, 4, 1, 1, 'Flying Skull PATH (DND)');
+INSERT INTO spell_template (Id, SchoolMask, Attributes, CastingTimeIndex, procChance, DurationIndex, rangeIndex, EquippedItemClass, Effect1, EffectImplicitTargetA1, EffectRadiusIndex1, EffectMiscValue1, SpellIconID, DmgMultiplier1, EffectMiscValueB1, SpellName) VALUES
+(39302, 1, 256, 1, 101, 9, 7, -1, 28, 18, 8, 22506, 1, 1, 64, 'Quest - The Exorcism, Summon Foul Purge');
+
+-- Mutilate (Rank 1)
+UPDATE spell_template SET AttributesEx4=0x00000001 WHERE id = 27576;
+
 -- wotlk backport
 INSERT INTO spell_template(Id, Attributes, AttributesEx,AttributesEx2,AttributesEx3,ProcFlags,ProcChance,DurationIndex,Effect1,EffectImplicitTargetA1,EffectImplicitTargetB1,EffectRadiusIndex1,EffectApplyAuraName1,EffectMiscValue1,EffectMiscValueB1,EffectTriggerSpell1,IsServerSide,SpellName) VALUES
 ('38854','384','0','0','0','0','101','3','28','18','0','0','0','22339','64','0','1','summon Redeemet Hatchling'),
@@ -182,6 +201,9 @@ INSERT INTO spell_template(Id, Category, Dispel, Mechanic, Attributes, Attribute
 ('26404', '0', '0', '0', '142606592', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '101', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '12', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '-1', '0', '0', '3', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '38', '0', '0', '0', '0', '0', '8', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', 'Despawn Tent Port', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', '0'),
 ('29327', '0', '0', '0', '320', '268435456', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '101', '0', '0', '0', '0', '21', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '-1', '0', '0', '6', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '23', '0', '0', '1000', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '29328', '0', '0', '0', '0', '0', '0', '1', '0', '0', 'Sapphiron\'s Wing Buffet', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', '0');
 
+-- serverside spell for factions
+INSERT INTO spell_template(Id,Attributes,AttributesEx,AttributesEx2,AttributesEx3,CastingTimeIndex,DurationIndex,rangeIndex,Effect1,Effect2,EffectDieSides1,EffectDieSides2,EffectBaseDice1,EffectBaseDice2,EffectBasePoints1,EffectBasePoints2,EffectImplicitTargetA1,EffectImplicitTargetA2,EffectApplyAuraName1,EffectApplyAuraName2,EffectMiscValue1,EffectMiscValue2,SpellIconID,SpellName,DmgMultiplier1,DmgMultiplier2) VALUES
+(39960,0x09800180,0x10000020,0x00000001,0x00100000,1,21,13,6,6,1,1,1,1,2,2,1,1,139,139,929,1001,1,'Finish the Gronn: Ogre Force Reaction',1,1); -- data gathered ID
 
 -- Missing Elemental Shield spell from Classic (BWL)
 INSERT INTO `spell_template` (`Id`, `Attributes`, `AttributesEx`, `AttributesEx3`, `AttributesEx4`, `CastingTimeIndex`, `ProcChance`, `DurationIndex`, `rangeIndex`, `Effect1`, `EffectDieSides1`, `EffectBaseDice1`, `EffectImplicitTargetA1`, `EffectRadiusIndex1`, `EffectMiscValue1`, `SpellIconID`, `SpellName`, `DmgMultiplier1`, `DmgMultiplier2`) VALUES 
@@ -513,6 +535,13 @@ UPDATE `spell_template` SET `MaxAffectedTargets` = 2 WHERE `Id` = 38511; -- 0
 UPDATE spell_template SET Effect2=6, EffectDieSides2=1, EffectBaseDice2=1, EffectImplicitTargetA2=1, EffectApplyAuraName2=23, EffectAmplitude2=10000, EffectTriggerSpell2=24870 WHERE Id=24869;
 UPDATE spell_template SET EffectRealPointsPerLevel1=0.25, EffectRealPointsPerLevel2=0.25, EffectBaseDice1=0, EffectBaseDice2=0, EffectBasePoints2=0 WHERE id=24870;
 
+-- Netherspite red portal periodic trigger
+INSERT INTO spell_template(Id,Attributes,DurationIndex,Effect1,EffectDieSides1,EffectBaseDice1,EffectImplicitTargetA1,EffectApplyAuraName1,EffectAmplitude1,EffectTriggerSpell1,SpellIconID,SpellName,DmgMultiplier1) VALUES
+(30396,384,21,6,1,1,1,23,1000,30469,1957,'Nether Portal - Perseverence Passive',1);
+
+-- Consumption - Void Zone - Netherspite - Void zone should not be put into combat
+UPDATE spell_template SET AttributesEx=AttributesEx|0x00000400 WHERE id IN(28865);
+
 -- Add missing spells for Darkmoon Faire Cannon event
 DELETE FROM spell_template WHERE Id IN (24743, 24754, 42825);
 INSERT INTO spell_template (Id, Category, Dispel, Mechanic, Attributes, AttributesEx, AttributesEx2, AttributesEx3, AttributesEx4, Stances, StancesNot, Targets, TargetCreatureType, RequiresSpellFocus, CasterAuraState, TargetAuraState, CastingTimeIndex, RecoveryTime, CategoryRecoveryTime, InterruptFlags, AuraInterruptFlags, ChannelInterruptFlags, ProcFlags, ProcChance, ProcCharges, MaxLevel, BaseLevel, SpellLevel, DurationIndex, PowerType, ManaCost, ManaCostPerlevel, ManaPerSecond, ManaPerSecondPerLevel, RangeIndex, Speed, StackAmount, Totem1, Totem2, Reagent1, Reagent2, Reagent3, Reagent4, Reagent5, Reagent6, Reagent7, Reagent8, ReagentCount1, ReagentCount2, ReagentCount3, ReagentCount4, ReagentCount5, ReagentCount6, ReagentCount7, ReagentCount8, EquippedItemClass, EquippedItemSubClassMask, EquippedItemInventoryTypeMask, Effect1, Effect2, Effect3, EffectDieSides1, EffectDieSides2, EffectDieSides3, EffectBaseDice1, EffectBaseDice2, EffectBaseDice3, EffectRealPointsPerLevel1, EffectRealPointsPerLevel2, EffectRealPointsPerLevel3, EffectMechanic1, EffectMechanic2, EffectMechanic3, EffectImplicitTargetA1, EffectImplicitTargetA2, EffectImplicitTargetA3, EffectImplicitTargetB1, EffectImplicitTargetB2, EffectImplicitTargetB3, EffectRadiusIndex1, EffectRadiusIndex2, EffectRadiusIndex3, EffectApplyAuraName1, EffectApplyAuraName2, EffectApplyAuraName3, EffectAmplitude1, EffectAmplitude2, EffectAmplitude3, EffectMultipleValue1, EffectMultipleValue2, EffectMultipleValue3, EffectChainTarget1, EffectChainTarget2, EffectChainTarget3, EffectItemType1, EffectItemType2, EffectItemType3, EffectMiscValue1, EffectMiscValue2, EffectMiscValue3, EffectTriggerSpell1, EffectTriggerSpell2, EffectTriggerSpell3, EffectPointsPerComboPoint1, EffectPointsPerComboPoint2, EffectPointsPerComboPoint3, SpellVisual, SpellIconID, ActiveIconID, SpellPriority, SpellName, SpellName2, SpellName3, SpellName4, SpellName5, SpellName6, SpellName7, SpellName8, Rank, Rank2, Rank3, Rank4, Rank5, Rank6, Rank7, Rank8, ManaCostPercentage, StartRecoveryCategory, StartRecoveryTime, MaxTargetLevel, SpellFamilyName, SpellFamilyFlags, MaxAffectedTargets, DmgClass, PreventionType, DmgMultiplier1, DmgMultiplier2, DmgMultiplier3, IsServerSide) VALUES
@@ -710,4 +739,41 @@ INSERT INTO spell_template(Id,Category,Attributes,baseLevel,spellLevel,DurationI
 INSERT INTO spell_template(Id,Attributes,CastingTimeIndex,DurationIndex,Effect1,EffectImplicitTargetA1,EffectMiscValue1,SpellName,DmgMultiplier1) VALUES
 (38375,384,1,31,76,18,185133,'Summon Fel Fire',1);
 
+
+-- fully guesswork, only ID, name and icon valid - rest verified with sniff
+INSERT INTO spell_template(Id,DurationIndex,Effect1,EffectImplicitTargetA1,EffectMiscValue1,SpellIconID,SpellName,DmgMultiplier1,IsServerSide) VALUES
+(39929,9,76,18,185584,1236,'Summon Naj''entus Spine',1,2);
+
+INSERT INTO spell_template(Id,SchoolMask,Attributes,AttributesEx,AttributesEx2,InterruptFlags,AuraInterruptFlags,ChannelInterruptFlags,baseLevel,spellLevel,rangeIndex,Effect1,EffectImplicitTargetA1,EffectRadiusIndex1,SpellIconID,SpellName,SpellFamilyFlags,DmgMultiplier1,DmgMultiplier2) VALUES
+(32941,32,268435840,4,4,7,5131,5135,20,20,13,3,38,16,548,'Blue Beam Dummy',8388608,1,1);
+
+-- Terokk should only hit one player
+UPDATE spell_template SET MaxAffectedTargets=1 WHERE Id IN(40722);
+
+-- Dissipate e.g used by 17378
+INSERT INTO `spell_template` (`Id`, `Attributes`, `CastingTimeIndex`, `procChance`, `DurationIndex`, `rangeIndex`, `EquippedItemClass`, `Effect1`, `EffectImplicitTargetA1`, `SpellIconID`, `SpellName`, `DmgMultiplier1`, `AreaId`, `IsServerSide`) VALUES
+(32763, 384, 1, 101, 21, 1, -1, 6, 1, 1, 'Dissipate', 1, 3521, 1);
+
+-- Used by Raging Colossus c.19188 at certain health percentages - multiple spawns issue to be resolved
+DELETE FROM `spell_template` WHERE `Id` = 33903;
+INSERT INTO `spell_template` (`Id`, `Attributes`, `AttributesEx`, `AttributesEx3`, `CastingTimeIndex`, `procChance`, `DurationIndex`, `rangeIndex`, `StackAmount`, `EquippedItemClass`, `Effect1`, `Effect2`, `EffectDieSides1`, `EffectDieSides2`, `EffectBaseDice1`, `EffectBaseDice2`, `EffectBasePoints2`, `EffectImplicitTargetA1`, `EffectImplicitTargetA2`, `EffectRadiusIndex1`, `EffectApplyAuraName2`, `EffectMiscValue1`, `EffectMiscValueB1`, `SpellIconID`, `SpellName`, `DmgMultiplier1`, `DmgMultiplier2`, `IsServerSide`) VALUES
+(33903, 384, 268435456, 1048576, 1, 101, 4, 1, 3, -1, 28, 6, 1, 1, 1, 1, -31, 48, 1, 29, 61, 19419, 64, 2154, 'Summon Crystalhide Rageling', 1, 1, 1);
+
+-- works differently in vanilla, hence rockbiter weapon icon, in wotlk its back in DBC
+-- missing spells from enchantment DBC
+INSERT INTO spell_template(Id,SchoolMask,Attributes,AttributesEx2,AttributesEx3,CastingTimeIndex,procFlags,procChance,maxLevel,baseLevel,spellLevel,DurationIndex,rangeIndex,Effect1,EffectDieSides1,EffectBaseDice1,EffectRealPointsPerLevel1,EffectBasePoints1,EffectImplicitTargetA1,EffectApplyAuraName1,SpellIconID,SpellName,SpellFamilyName,SpellFamilyFlags,DmgMultiplier1,DmgMultiplier2,DmgMultiplier3) VALUES
+(10400,8,262272,16777216,67108864,1,20,100, 16,10,10 ,21,1,6,1,1, 19,325, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1),
+(15567,8,262272,16777216,67108864,1,20,100, 24,18,18 ,21,1,6,1,1, 29,478, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1),
+(15568,8,262272,16777216,67108864,1,20,100, 34,26,26 ,21,1,6,1,1, 42,715, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1),
+(15569,8,262272,16777216,67108864,1,20,100, 44,36,36 ,21,1,6,1,1, 73,1143, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1),
+(16311,8,262272,16777216,67108864,1,20,100, 54,46,46 ,21,1,6,1,1, 62,1875, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1),
+(16312,8,262272,16777216,67108864,1,20,100, 64,56,56 ,21,1,6,1,1, 78,2497, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1),
+(16313,8,262272,16777216,67108864,1,20,100, 68,64,64 ,21,1,6,1,1, 98,3106, 1,4,688,'Flametongue Weapon (Passive)',11,2097152,1,1,1);
+
+-- Summon Destroyed Sentinel
+INSERT INTO `spell_template` (`Id`, `Category`, `Dispel`, `Mechanic`, `Attributes`, `AttributesEx`, `AttributesEx2`, `AttributesEx3`, `AttributesEx4`, `AttributesEx5`, `AttributesEx6`, `Stances`, `StancesNot`, `Targets`, `TargetCreatureType`, `RequiresSpellFocus`, `FacingCasterFlags`, `CasterAuraState`, `TargetAuraState`, `CasterAuraStateNot`, `TargetAuraStateNot`, `CastingTimeIndex`, `RecoveryTime`, `CategoryRecoveryTime`, `InterruptFlags`, `AuraInterruptFlags`, `ChannelInterruptFlags`, `procFlags`, `procChance`, `procCharges`, `maxLevel`, `baseLevel`, `spellLevel`, `DurationIndex`, `powerType`, `manaCost`, `manaCostPerlevel`, `manaPerSecond`, `manaPerSecondPerLevel`, `rangeIndex`, `speed`, `StackAmount`, `Totem1`, `Totem2`, `Reagent1`, `Reagent2`, `Reagent3`, `Reagent4`, `Reagent5`, `Reagent6`, `Reagent7`, `Reagent8`, `ReagentCount1`, `ReagentCount2`, `ReagentCount3`, `ReagentCount4`, `ReagentCount5`, `ReagentCount6`, `ReagentCount7`, `ReagentCount8`, `EquippedItemClass`, `EquippedItemSubClassMask`, `EquippedItemInventoryTypeMask`, `Effect1`, `Effect2`, `Effect3`, `EffectDieSides1`, `EffectDieSides2`, `EffectDieSides3`, `EffectBaseDice1`, `EffectBaseDice2`, `EffectBaseDice3`, `EffectDicePerLevel1`, `EffectDicePerLevel2`, `EffectDicePerLevel3`, `EffectRealPointsPerLevel1`, `EffectRealPointsPerLevel2`, `EffectRealPointsPerLevel3`, `EffectBasePoints1`, `EffectBasePoints2`, `EffectBasePoints3`, `EffectMechanic1`, `EffectMechanic2`, `EffectMechanic3`, `EffectImplicitTargetA1`, `EffectImplicitTargetA2`, `EffectImplicitTargetA3`, `EffectImplicitTargetB1`, `EffectImplicitTargetB2`, `EffectImplicitTargetB3`, `EffectRadiusIndex1`, `EffectRadiusIndex2`, `EffectRadiusIndex3`, `EffectApplyAuraName1`, `EffectApplyAuraName2`, `EffectApplyAuraName3`, `EffectAmplitude1`, `EffectAmplitude2`, `EffectAmplitude3`, `EffectMultipleValue1`, `EffectMultipleValue2`, `EffectMultipleValue3`, `EffectChainTarget1`, `EffectChainTarget2`, `EffectChainTarget3`, `EffectItemType1`, `EffectItemType2`, `EffectItemType3`, `EffectMiscValue1`, `EffectMiscValue2`, `EffectMiscValue3`, `EffectMiscValueB1`, `EffectMiscValueB2`, `EffectMiscValueB3`, `EffectTriggerSpell1`, `EffectTriggerSpell2`, `EffectTriggerSpell3`, `EffectPointsPerComboPoint1`, `EffectPointsPerComboPoint2`, `EffectPointsPerComboPoint3`, `SpellVisual`, `SpellIconID`, `activeIconID`, `spellPriority`, `SpellName`, `SpellName2`, `SpellName3`, `SpellName4`, `SpellName5`, `SpellName6`, `SpellName7`, `SpellName8`, `SpellName9`, `SpellName10`, `SpellName11`, `SpellName12`, `SpellName13`, `SpellName14`, `SpellName15`, `SpellName16`, `Rank`, `Rank2`, `Rank3`, `Rank4`, `Rank5`, `Rank6`, `Rank7`, `Rank8`, `Rank9`, `Rank10`, `Rank11`, `Rank12`, `Rank13`, `Rank14`, `Rank15`, `Rank16`, `ManaCostPercentage`, `StartRecoveryCategory`, `StartRecoveryTime`, `MaxTargetLevel`, `SpellFamilyName`, `SpellFamilyFlags`, `MaxAffectedTargets`, `DmgClass`, `PreventionType`, `DmgMultiplier1`, `DmgMultiplier2`, `DmgMultiplier3`, `TotemCategory1`, `TotemCategory2`, `AreaId`, `SchoolMask`, `IsServerSide`, `AttributesServerside`) VALUES
+('37394', '0', '0', '0', '8388992', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '101', '0', '0', '0', '0', '85', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '-1', '0', '0', '28', '0', '0', '1', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '18', '0', '0', '0', '0', '0', '1', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '21761', '0', '0', '64', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1667', '0', '0', 'Summon Destroyed Sentinel', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '0', '0', '0', '1', '0', '0');
+
+-- Vashj MC should target only players
+UPDATE spell_template SET AttributesEx3=0x00000100 WHERE Id IN(38511);
 

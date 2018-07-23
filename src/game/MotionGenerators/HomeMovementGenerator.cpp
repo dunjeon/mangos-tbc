@@ -28,6 +28,7 @@ void HomeMovementGenerator<Creature>::Initialize(Creature& owner)
     wasActive = owner.isActiveObject();
     if (!wasActive)
         owner.SetActiveObjectState(true);
+    owner.SetEvade(true);
 
     _setTargetLocation(owner);
 }
@@ -67,6 +68,7 @@ bool HomeMovementGenerator<Creature>::Update(Creature& owner, const uint32& /*ti
 
 void HomeMovementGenerator<Creature>::Finalize(Creature& owner)
 {
+    owner.SetEvade(false);
     if (arrived)
     {
         if (owner.GetTemporaryFactionFlags() & TEMPFACTION_RESTORE_REACH_HOME)

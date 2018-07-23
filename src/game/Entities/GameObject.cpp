@@ -335,80 +335,81 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
 
             if (IsSpawned())
             {
-                // Check if all charges were consumed
+                // traps can have time and can not have
                 GameObjectInfo const* goInfo = GetGOInfo();
+                if (goInfo->type == GAMEOBJECT_TYPE_TRAP)   // traps
+                {
+                    if (m_cooldownTime < time(nullptr))
+                    {
+                        // FIXME: this is activation radius (in different casting radius that must be selected from spell data)
+                        // TODO: move activated state code (cast itself) to GO_ACTIVATED, in this place only check activating and set state
+                        float radius = float(goInfo->trap.diameter) / 2.0f;
+                        bool valid = true;
+                        if (!radius)
+                        {
+                            if (goInfo->trap.cooldown != 3)     // cast in other case (at some triggering/linked go/etc explicit call)
+                                valid = false;
+                            else
+                            {
+                                if (m_respawnTime > 0)
+                                    valid = false;
+                                else // battlegrounds gameobjects has data2 == 0 && data5 == 3                                
+                                    radius = float(goInfo->trap.cooldown);
+                            }
+                        }
+
+                        if (valid)
+                        {
+                            // Should trap trigger?
+                            Unit* target = nullptr;                     // pointer to appropriate target if found any
+
+                            if (std::function<bool(Unit*)>* functor = sScriptDevAIMgr.OnTrapSearch(this))
+                            {
+                                MaNGOS::AnyUnitFulfillingConditionInRangeCheck u_check(this, *functor, radius);
+                                MaNGOS::UnitSearcher<MaNGOS::AnyUnitFulfillingConditionInRangeCheck> checker(target, u_check);
+                                Cell::VisitAllObjects(this, checker, radius);
+                            }
+                            else
+                            {
+                                switch (goInfo->trapCustom.triggerOn)
+                                {
+                                    case 1: // friendly
+                                    {
+                                        MaNGOS::AnyFriendlyUnitInObjectRangeCheck u_check(this, nullptr, radius);
+                                        MaNGOS::UnitSearcher<MaNGOS::AnyFriendlyUnitInObjectRangeCheck> checker(target, u_check);
+                                        Cell::VisitAllObjects(this, checker, radius);
+                                        break;
+                                    }
+                                    case 2: // all
+                                    {
+                                        MaNGOS::AnyUnitInObjectRangeCheck u_check(this, radius);
+                                        MaNGOS::UnitSearcher<MaNGOS::AnyUnitInObjectRangeCheck> checker(target, u_check);
+                                        Cell::VisitAllObjects(this, checker, radius);
+                                        break;
+                                    }
+                                    default: // unfriendly
+                                    {
+                                        MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(this, radius);
+                                        MaNGOS::UnitSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> checker(target, u_check);
+                                        Cell::VisitAllObjects(this, checker, radius);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (target && (!goInfo->trapCustom.triggerOn || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))) // do not trigger on hostile traps if not selectable
+                                Use(target);
+                        }
+                    }
+                }
+
                 if (uint32 max_charges = goInfo->GetCharges())
                 {
                     if (m_useTimes >= max_charges)
                     {
                         m_useTimes = 0;
                         SetLootState(GO_JUST_DEACTIVATED);  // can be despawned or destroyed
-                        break;
                     }
-                }
-
-                // Handle traps cooldown
-                if (goInfo->type == GAMEOBJECT_TYPE_TRAP)   // traps
-                {
-                    if (m_cooldownTime >= time(nullptr))
-                        return;
-
-                    // FIXME: this is activation radius (in different casting radius that must be selected from spell data)
-                    // TODO: move activated state code (cast itself) to GO_ACTIVATED, in this place only check activating and set state
-                    float radius = float(goInfo->trap.radius);
-                    if (!radius)
-                    {
-                        if (goInfo->trap.cooldown != 3)     // cast in other case (at some triggering/linked go/etc explicit call)
-                            break;
-                        else
-                        {
-                            if (m_respawnTime > 0)
-                                break;
-
-                            // battlegrounds gameobjects has data2 == 0 && data5 == 3
-                            radius = float(goInfo->trap.cooldown);
-                        }
-                    }
-
-                    // Should trap trigger?
-                    Unit* target = nullptr;                     // pointer to appropriate target if found any
-
-                    if (std::function<bool(Unit*)>* functor = sScriptDevAIMgr.OnTrapSearch(this))
-                    {
-                        MaNGOS::AnyUnitFulfillingConditionInRangeCheck u_check(this, *functor, radius);
-                        MaNGOS::UnitSearcher<MaNGOS::AnyUnitFulfillingConditionInRangeCheck> checker(target, u_check);
-                        Cell::VisitAllObjects(this, checker, radius);
-                    }
-                    else
-                    {
-                        switch (goInfo->trapCustom.triggerOn)
-                        {
-                            case 1: // friendly
-                            {
-                                MaNGOS::AnyFriendlyUnitInObjectRangeCheck u_check(this, nullptr, radius);
-                                MaNGOS::UnitSearcher<MaNGOS::AnyFriendlyUnitInObjectRangeCheck> checker(target, u_check);
-                                Cell::VisitAllObjects(this, checker, radius);
-                                break;
-                            }
-                            case 2: // all
-                            {
-                                MaNGOS::AnyUnitInObjectRangeCheck u_check(this, radius);
-                                MaNGOS::UnitSearcher<MaNGOS::AnyUnitInObjectRangeCheck> checker(target, u_check);
-                                Cell::VisitAllObjects(this, checker, radius);
-                                break;
-                            }
-                            default: // unfriendly
-                            {
-                                MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(this, radius);
-                                MaNGOS::UnitSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> checker(target, u_check);
-                                Cell::VisitAllObjects(this, checker, radius);
-                                break;
-                            }
-                        }
-                    }
-
-                    if (target && (!goInfo->trapCustom.triggerOn || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE))) // do not trigger on hostile traps if not selectable
-                        Use(target);
                 }
             }
             break;
@@ -518,7 +519,7 @@ void GameObject::Update(uint32 update_diff, uint32 p_time)
             }
 
             // Remove wild summoned after use
-            if (!HasStaticDBSpawnData() && (!GetSpellId() || GetGOInfo()->GetDespawnPossibility()))
+            if (!HasStaticDBSpawnData() && (!GetSpellId() || GetGOInfo()->GetDespawnPossibility() || GetGOInfo()->IsDespawnAtAction()))
             {
                 if (Unit* owner = GetOwner())
                     owner->RemoveGameObject(this, false);
@@ -1039,9 +1040,6 @@ void GameObject::TriggerLinkedGameObject(Unit* target) const
     // so it appears that using range from spell is obsolete.
     float range = 0.5f;
 
-    if (trapSpell)                                          // checked at load already
-        range = GetSpellMaxRange(sSpellRangeStore.LookupEntry(trapSpell->rangeIndex));
-
     // search nearest linked GO
     GameObject* trapGO = nullptr;
 
@@ -1223,7 +1221,7 @@ void GameObject::Use(Unit* user)
             Unit* caster = owner ? owner : user;
 
             GameObjectInfo const* goInfo = GetGOInfo();
-            float radius = float(goInfo->trap.radius);
+            float radius = float(goInfo->trap.diameter) / 2.0f;
             bool IsBattleGroundTrap = !radius && goInfo->trap.cooldown == 3 && m_respawnTime == 0;
 
             // FIXME: when GO casting will be implemented trap must cast spell to target
@@ -1590,7 +1588,8 @@ void GameObject::Use(Unit* user)
                     return;
             }
 
-            spellId = info->spellcaster.spellId;
+            if (spellCaster->CastSpell(user, info->spellcaster.spellId, TRIGGERED_OLD_TRIGGERED, nullptr, nullptr, GetObjectGuid()) != SPELL_CAST_OK)
+                return;
 
             AddUse();
 
@@ -1599,7 +1598,7 @@ void GameObject::Use(Unit* user)
             // spellcaster GOs like city portals should never be locked
             if (info->spellcaster.charges && !GetUseCount())
                 SetUInt32Value(GAMEOBJECT_FLAGS, GO_FLAG_LOCKED);
-            break;
+            return;
         }
         case GAMEOBJECT_TYPE_MEETINGSTONE:                  // 23
         {

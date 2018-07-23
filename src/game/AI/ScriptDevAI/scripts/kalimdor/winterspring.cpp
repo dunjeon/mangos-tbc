@@ -404,7 +404,7 @@ struct npc_ranshallaAI : public npc_escortAI, private DialogueHelper
                     m_creature->SetFacingToObject(pAltar);
                 m_creature->SetStandState(UNIT_STAND_STATE_KNEEL);
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_GUARDIANS_ALTAR, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_GUARDIANS_ALTAR, m_creature);
                 m_creature->ForcedDespawn(1 * MINUTE * IN_MILLISECONDS);
                 break;
         }
@@ -450,7 +450,7 @@ struct npc_ranshallaAI : public npc_escortAI, private DialogueHelper
     }
 };
 
-CreatureAI* GetAI_npc_ranshalla(Creature* pCreature)
+UnitAI* GetAI_npc_ranshalla(Creature* pCreature)
 {
     return new npc_ranshallaAI(pCreature);
 }
@@ -722,7 +722,7 @@ bool GossipSelect_npc_artorius(Player* pPlayer, Creature* pCreature, uint32 uiSe
     return true;
 }
 
-CreatureAI* GetAI_npc_artorius(Creature* pCreature)
+UnitAI* GetAI_npc_artorius(Creature* pCreature)
 {
     return new npc_artoriusAI(pCreature);
 }

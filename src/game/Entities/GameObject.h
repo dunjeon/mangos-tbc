@@ -120,7 +120,7 @@ struct GameObjectInfo
         {
             uint32 lockId;                                  //0 -> Lock.dbc
             uint32 level;                                   //1
-            uint32 radius;                                  //2 radius for trap activation
+            uint32 diameter;                                //2 radius for trap activation
             uint32 spellId;                                 //3
             uint32 charges;                                 //4 need respawn (if > 0)
             uint32 cooldown;                                //5 time in secs
@@ -425,7 +425,6 @@ struct GameObjectInfo
         {
             case GAMEOBJECT_TYPE_DOOR:       return !!door.noDamageImmune;
             case GAMEOBJECT_TYPE_BUTTON:     return !!button.noDamageImmune;
-            case GAMEOBJECT_TYPE_QUESTGIVER: return !!questgiver.noDamageImmune;
             case GAMEOBJECT_TYPE_GOOBER:     return !!goober.noDamageImmune;
             case GAMEOBJECT_TYPE_FLAGSTAND:  return !!flagstand.noDamageImmune;
             case GAMEOBJECT_TYPE_FLAGDROP:   return !!flagdrop.noDamageImmune;

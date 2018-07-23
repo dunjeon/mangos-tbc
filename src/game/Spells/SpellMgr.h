@@ -748,10 +748,10 @@ inline bool IsNeutralTarget(uint32 target)
         case TARGET_RIGHT_FROM_VICTIM:
         case TARGET_LEFT_FROM_VICTIM:
         case TARGET_70:
-        case TARGET_RANDOM_NEARBY_LOC:
-        case TARGET_RANDOM_CIRCUMFERENCE_POINT:
-        case TARGET_RANDOM_DEST_LOC:
-        case TARGET_RANDOM_CIRCUMFERENCE_AROUND_TARGET:
+        case TARGET_RANDOM_DEST_CASTER:
+        case TARGET_RANDOM_DEST_CASTER_CIRCUMFERENCE:
+        case TARGET_RANDOM_DEST_TARGET:
+        case TARGET_RANDOM_DEST_TARGET_CIRCUMFERENCE:
         case TARGET_DYNAMIC_OBJECT_COORDINATES:
         case TARGET_POINT_AT_NORTH:
         case TARGET_POINT_AT_SOUTH:
@@ -854,8 +854,8 @@ inline bool IsNeutralEffectTargetPositive(uint32 etarget, const WorldObject* cas
         case TARGET_29:
         case TARGET_58:
         case TARGET_70:
-        case TARGET_RANDOM_DEST_LOC:
-        case TARGET_RANDOM_CIRCUMFERENCE_AROUND_TARGET:
+        case TARGET_RANDOM_DEST_TARGET:
+        case TARGET_RANDOM_DEST_TARGET_CIRCUMFERENCE:
             break;
         default:
             return true; // Some gameobjects or coords, who cares
@@ -943,6 +943,7 @@ inline bool IsPositiveEffect(const SpellEntry* spellproto, SpellEffectIndex effI
         case 35941: // Gravity Lapse - Neutral spell with TARGET_ONLY_PLAYER attribute, should hit all players in the room
         case 39495: // Remove Tainted Cores
         case 39497: // Remove Enchanted Weapons - both should hit all players in zone with the given items, uses a neutral target type
+        case 34700: // Allergic Reaction - Neutral target type - needs to be a debuff
             return false;
     }
 
@@ -981,6 +982,24 @@ inline bool IsPositiveEffect(const SpellEntry* spellproto, SpellEffectIndex effI
                     break;
             }
             break;
+        case SPELL_EFFECT_SCHOOL_DAMAGE:
+        {
+            switch (spellproto->Id)
+            {
+                case 32247: // chess damage spells - Neutral
+                case 37459:
+                case 37461:
+                case 37462:
+                case 37463:
+                case 37474:
+                case 37476:
+                case 39384:
+                    return false;
+                default:
+                    break;
+            }
+            break;
+        }
         // Aura exceptions:
         case SPELL_EFFECT_APPLY_AURA:
         case SPELL_EFFECT_APPLY_AREA_AURA_FRIEND:
@@ -1017,6 +1036,25 @@ inline bool IsPositiveEffect(const SpellEntry* spellproto, SpellEffectIndex effI
                             break;
                     }
                     break;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
+        case SPELL_EFFECT_PERSISTENT_AREA_AURA:
+        {
+            switch (spellproto->EffectApplyAuraName[effIndex])
+            {
+                case SPELL_AURA_PERIODIC_DAMAGE: // possible TODO: make all return false
+                {
+                    switch (spellproto->Id)
+                    {
+                        case 37465: // chess rain of fire and poison cloud spells
+                        case 37469:
+                        case 37775:
+                            return false;
+                    }
                 }
                 default:
                     break;
@@ -1317,6 +1355,8 @@ inline bool IsIgnoreLosSpell(SpellEntry const* spellInfo)
         case 31628:                                 // Green Beam
         case 31630:                                 // Green Beam
         case 31631:                                 // Green Beam
+        case 24742:                                 // Magic Wings
+        case 42867:                                 // both need LOS, likely TARGET_DUELVSPLAYER should use LOS ignore from normal radius, not per-effect radius WIP
             return true;
         default:
             break;
@@ -1327,6 +1367,13 @@ inline bool IsIgnoreLosSpell(SpellEntry const* spellInfo)
 
 inline bool IsIgnoreLosSpellEffect(SpellEntry const* spellInfo, SpellEffectIndex effIdx)
 {
+    // TODO: Move this to target logic
+    switch (spellInfo->EffectImplicitTargetA[effIdx])
+    {
+        case TARGET_AREAEFFECT_PARTY_AND_CLASS: return true;
+        default: break;
+    }
+
     return spellInfo->EffectRadiusIndex[effIdx] == 13 || IsIgnoreLosSpell(spellInfo);
 }
 
@@ -2361,6 +2408,25 @@ class SpellMgr
         {
             if (SpellChainNode const* node = GetSpellChainNode(spell_id))
                 return node->prev;
+
+            return 0;
+        }
+
+        uint32 GetNextSpellInChain(uint32 spell_id) const
+        {
+            SpellChainMapNext const& nextMap = GetSpellChainNext();
+
+            for (SpellChainMapNext::const_iterator itr = nextMap.lower_bound(spell_id); itr != nextMap.upper_bound(spell_id); ++itr)
+            {
+                SpellChainNode const* node = GetSpellChainNode(itr->second);
+
+                // If next spell is a requirement for this one then skip it
+                if (node->req == spell_id)
+                    continue;
+
+                if (node->prev == spell_id)
+                    return itr->second;
+            }
 
             return 0;
         }

@@ -303,7 +303,8 @@ struct npc_manaforge_control_consoleAI : public ScriptedAI
         }
     }
 };
-CreatureAI* GetAI_npc_manaforge_control_console(Creature* pCreature)
+
+UnitAI* GetAI_npc_manaforge_control_console(Creature* pCreature)
 {
     return new npc_manaforge_control_consoleAI(pCreature);
 }
@@ -596,7 +597,7 @@ struct npc_commander_dawnforgeAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_commander_dawnforge(Creature* pCreature)
+UnitAI* GetAI_npc_commander_dawnforge(Creature* pCreature)
 {
     return new npc_commander_dawnforgeAI(pCreature);
 }
@@ -655,7 +656,7 @@ struct npc_bessyAI : public npc_escortAI
                 break;
             case 12:
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_COWS_COME_HOME, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_COWS_COME_HOME, m_creature);
                 break;
         }
     }
@@ -680,7 +681,7 @@ bool QuestAccept_npc_bessy(Player* pPlayer, Creature* pCreature, const Quest* pQ
     return true;
 }
 
-CreatureAI* GetAI_npc_bessy(Creature* pCreature)
+UnitAI* GetAI_npc_bessy(Creature* pCreature)
 {
     return new npc_bessyAI(pCreature);
 }
@@ -751,7 +752,7 @@ struct npc_maxx_a_million_escortAI : public npc_escortAI
                 break;
             case 36:
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_MARK_V_IS_ALIVE, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_MARK_V_IS_ALIVE, m_creature);
 
                 if (Creature* pAlley = m_creature->GetMap()->GetCreature(m_alleyGuid))
                     DoScriptText(SAY_ALLEY_FINISH, pAlley);
@@ -818,7 +819,7 @@ struct npc_maxx_a_million_escortAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_maxx_a_million(Creature* pCreature)
+UnitAI* GetAI_npc_maxx_a_million(Creature* pCreature)
 {
     return new npc_maxx_a_million_escortAI(pCreature);
 }
@@ -871,7 +872,7 @@ struct npc_zeppitAI : public ScriptedPetAI
     }
 };
 
-CreatureAI* GetAI_npc_zeppit(Creature* pCreature)
+UnitAI* GetAI_npc_zeppit(Creature* pCreature)
 {
     return new npc_zeppitAI(pCreature);
 }
@@ -983,7 +984,7 @@ struct npc_protectorate_demolitionistAI : public npc_escortAI
                 if (Player* pPlayer = GetPlayerForEscort())
                 {
                     m_creature->SetFacingToObject(pPlayer);
-                    pPlayer->GroupEventHappens(QUEST_ID_DELIVERING_MESSAGE, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ID_DELIVERING_MESSAGE, m_creature);
                 }
                 SetEscortPaused(true);
                 m_uiEventTimer = 6000;
@@ -1030,7 +1031,7 @@ struct npc_protectorate_demolitionistAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_protectorate_demolitionist(Creature* pCreature)
+UnitAI* GetAI_npc_protectorate_demolitionist(Creature* pCreature)
 {
     return new npc_protectorate_demolitionistAI(pCreature);
 }
@@ -1079,7 +1080,7 @@ struct npc_captured_vanguardAI : public npc_escortAI
         {
             case 15:
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_ID_ESCAPE_STAGING_GROUNDS, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ID_ESCAPE_STAGING_GROUNDS, m_creature);
                 break;
             case 16:
                 DoScriptText(SAY_VANGUARD_FINISH, m_creature);
@@ -1121,7 +1122,7 @@ struct npc_captured_vanguardAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_captured_vanguard(Creature* pCreature)
+UnitAI* GetAI_npc_captured_vanguard(Creature* pCreature)
 {
     return new npc_captured_vanguardAI(pCreature);
 }
@@ -1341,14 +1342,14 @@ struct npc_drijyaAI : public npc_escortAI
                 if (Player* pPlayer = GetPlayerForEscort())
                 {
                     DoScriptText(SAY_DRIJYA_COMPLETE, m_creature, pPlayer);
-                    pPlayer->GroupEventHappens(QUEST_ID_WARP_GATE, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ID_WARP_GATE, m_creature);
                 }
                 m_creature->ClearTemporaryFaction();
                 break;
         }
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
     {
         if (eventType == AI_EVENT_START_ESCORT && pInvoker->GetTypeId() == TYPEID_PLAYER)
         {
@@ -1418,7 +1419,7 @@ struct npc_drijyaAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_drijya(Creature* pCreature)
+UnitAI* GetAI_npc_drijya(Creature* pCreature)
 {
     return new npc_drijyaAI(pCreature);
 }
@@ -1506,7 +1507,7 @@ struct npc_dimensiusAI : public Scripted_NoMovementAI
         }
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* pSender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* pSender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         // event is sent by dbscript
         if (eventType == AI_EVENT_CUSTOM_EVENTAI_B && pSender->GetEntry() == NPC_CAPTAIN_SAEED)
@@ -1575,7 +1576,7 @@ struct npc_dimensiusAI : public Scripted_NoMovementAI
     }
 };
 
-CreatureAI* GetAI_npc_dimensius(Creature* pCreature)
+UnitAI* GetAI_npc_dimensius(Creature* pCreature)
 {
     return new npc_dimensiusAI(pCreature);
 }
@@ -1624,7 +1625,7 @@ struct npc_salhadaarAI : public ScriptedAI
                 summon->ForcedDespawn(0);
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A && (!m_creature->isInCombat()) && (!m_creature->isDead()))
         {
@@ -1734,7 +1735,7 @@ struct npc_salhadaarAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_salhadaar(Creature* pCreature)
+UnitAI* GetAI_npc_salhadaar(Creature* pCreature)
 {
     return new npc_salhadaarAI(pCreature);
 }
@@ -1752,7 +1753,7 @@ struct npc_energy_ballAI : public ScriptedAI
         m_uiInterruptTimer = 0;
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
             m_creature->CastSpell(nullptr, SPELL_SALAADIN_TESLA, TRIGGERED_NONE);
@@ -1800,7 +1801,7 @@ struct npc_energy_ballAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_energy_ball(Creature* pCreature)
+UnitAI* GetAI_npc_energy_ball(Creature* pCreature)
 {
     return new npc_energy_ballAI(pCreature);
 }
@@ -1844,7 +1845,7 @@ struct npc_scrap_reaverAI : ScriptedPetAI
         m_creature->SetStandState(UNIT_STAND_STATE_STAND);
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A && !m_dontDoAnything)
             Die();
@@ -1993,7 +1994,7 @@ struct npc_scrap_reaverAI : ScriptedPetAI
     }
 };
 
-CreatureAI* GetAI_npc_scrap_reaver(Creature* creature)
+UnitAI* GetAI_npc_scrap_reaver(Creature* creature)
 {
     return new npc_scrap_reaverAI(creature);
 }
@@ -2115,7 +2116,6 @@ struct npc_scrapped_fel_reaverAI : ScriptedAI
     void EnterEvadeMode() override
     {
         m_creature->RemoveAllAurasOnEvade();
-        m_creature->DeleteThreatList();
         m_creature->CombatStop(true);
 
         m_creature->SetLootRecipient(nullptr);
@@ -2189,7 +2189,7 @@ struct npc_scrapped_fel_reaverAI : ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_scrapped_fel_reaver(Creature* creature)
+UnitAI* GetAI_npc_scrapped_fel_reaver(Creature* creature)
 {
     return new npc_scrapped_fel_reaverAI(creature);
 }
@@ -2597,7 +2597,7 @@ struct npc_adyen_the_lightwardenAI : public ScriptedAI
     void EndEvent(Creature* ishanah)
     {
         if (Player* player = m_creature->GetMap()->GetPlayer(m_playerGuid))
-            player->GroupEventHappens(QUEST_DEATHBLOW_TO_THE_LEGION, m_creature);
+            player->RewardPlayerAndGroupAtEventExplored(QUEST_DEATHBLOW_TO_THE_LEGION, m_creature);
         if (Creature* orelis = m_creature->GetMap()->GetCreature(m_orelisGuid))
             orelis->ForcedDespawn(60000); // can be dead
         if (Creature* karja = m_creature->GetMap()->GetCreature(m_karjaGuid))
@@ -2733,7 +2733,7 @@ struct npc_adyen_the_lightwardenAI : public ScriptedAI
         }
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* sender, Unit* /*invoker*/, uint32 /*miscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* sender, Unit* /*invoker*/, uint32 /*miscValue*/) override
     {
         if (eventType == AI_EVENT_CUSTOM_A)
         {
@@ -2972,12 +2972,12 @@ struct npc_kaylaan_the_lostAI : public ScriptedAI
     }
 };
 
-CreatureAI* Getnpc_adyen_the_lightwardenAI(Creature* creature)
+UnitAI* Getnpc_adyen_the_lightwardenAI(Creature* creature)
 {
     return new npc_adyen_the_lightwardenAI(creature);
 }
 
-CreatureAI* Getnpc_kaylaan_the_lostAI(Creature* creature)
+UnitAI* Getnpc_kaylaan_the_lostAI(Creature* creature)
 {
     return new npc_kaylaan_the_lostAI(creature);
 }

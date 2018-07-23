@@ -75,7 +75,6 @@ struct mob_unkor_the_ruthlessAI : public ScriptedAI
         m_creature->SetFactionTemporary(FACTION_FRIENDLY, TEMPFACTION_RESTORE_REACH_HOME);
         m_creature->SetStandState(UNIT_STAND_STATE_SIT);
         m_creature->RemoveAllAuras();
-        m_creature->DeleteThreatList();
         m_creature->CombatStop(true);
         m_uiUnfriendlyTimer = 60000;
     }
@@ -126,7 +125,7 @@ struct mob_unkor_the_ruthlessAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_mob_unkor_the_ruthless(Creature* pCreature)
+UnitAI* GetAI_mob_unkor_the_ruthless(Creature* pCreature)
 {
     return new mob_unkor_the_ruthlessAI(pCreature);
 }
@@ -176,7 +175,7 @@ struct mob_netherweb_victimAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_mob_netherweb_victim(Creature* pCreature)
+UnitAI* GetAI_mob_netherweb_victim(Creature* pCreature)
 {
     return new mob_netherweb_victimAI(pCreature);
 }
@@ -236,7 +235,7 @@ struct npc_akunoAI : public npc_escortAI
                 DoScriptText(SAY_AKU_COMPLETE, m_creature);
 
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_ESCAPING_TOMB, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ESCAPING_TOMB, m_creature);
 
                 break;
         }
@@ -280,7 +279,7 @@ bool QuestAccept_npc_akuno(Player* pPlayer, Creature* pCreature, const Quest* pQ
     return true;
 }
 
-CreatureAI* GetAI_npc_akuno(Creature* pCreature)
+UnitAI* GetAI_npc_akuno(Creature* pCreature)
 {
     return new npc_akunoAI(pCreature);
 }
@@ -368,7 +367,7 @@ struct npc_hungry_nether_rayAI : public ScriptedPetAI
     }
 };
 
-CreatureAI* GetAI_npc_hungry_nether_ray(Creature* pCreature)
+UnitAI* GetAI_npc_hungry_nether_ray(Creature* pCreature)
 {
     return new npc_hungry_nether_rayAI(pCreature);
 }
@@ -582,7 +581,7 @@ struct npc_letollAI : public npc_escortAI
                             if (Player* pPlayer = GetPlayerForEscort())
                             {
                                 DoScriptText(SAY_LE_THANKS, m_creature, pPlayer);
-                                pPlayer->GroupEventHappens(QUEST_DIGGING_BONES, m_creature);
+                                pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_DIGGING_BONES, m_creature);
                             }
 
                             SetEscortPaused(false);
@@ -602,7 +601,7 @@ struct npc_letollAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_letoll(Creature* pCreature)
+UnitAI* GetAI_npc_letoll(Creature* pCreature)
 {
     return new npc_letollAI(pCreature);
 }
@@ -698,7 +697,7 @@ struct npc_isla_starmaneAI : public npc_escortAI
                 break;
             case 61:
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(pPlayer->GetTeam() == ALLIANCE ? QUEST_ESCAPE_FROM_FIREWING_POINT_A : QUEST_ESCAPE_FROM_FIREWING_POINT_H, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(pPlayer->GetTeam() == ALLIANCE ? QUEST_ESCAPE_FROM_FIREWING_POINT_A : QUEST_ESCAPE_FROM_FIREWING_POINT_H, m_creature);
                 break;
             case 67:
                 if (Player* pPlayer = GetPlayerForEscort())
@@ -770,7 +769,7 @@ bool QuestAccept_npc_isla_starmane(Player* pPlayer, Creature* pCreature, const Q
     return true;
 }
 
-CreatureAI* GetAI_npc_isla_starmane(Creature* pCreature)
+UnitAI* GetAI_npc_isla_starmane(Creature* pCreature)
 {
     return new npc_isla_starmaneAI(pCreature);
 }
@@ -843,7 +842,7 @@ struct npc_skywingAI : public npc_escortAI
                 DoScriptText(SAY_SKYWING_END, m_creature);
 
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_SKYWING, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_SKYWING, m_creature);
         }
     }
 
@@ -896,7 +895,7 @@ bool QuestAccept_npc_skywing(Player* pPlayer, Creature* pCreature, const Quest* 
     return true;
 }
 
-CreatureAI* GetAI_npc_skywing(Creature* pCreature)
+UnitAI* GetAI_npc_skywing(Creature* pCreature)
 {
     return new npc_skywingAI(pCreature);
 }
@@ -987,7 +986,7 @@ struct npc_cenarion_sparrowhawkAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_cenarion_sparrowhawk(Creature* pCreature)
+UnitAI* GetAI_npc_cenarion_sparrowhawk(Creature* pCreature)
 {
     return new npc_cenarion_sparrowhawkAI(pCreature);
 }
@@ -1018,7 +1017,7 @@ struct npc_skyguard_prisonerAI : public npc_escortAI
 
     void Reset() override { }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
     {
         if (eventType == AI_EVENT_START_ESCORT && pInvoker->GetTypeId() == TYPEID_PLAYER)
         {
@@ -1095,7 +1094,7 @@ struct npc_skyguard_prisonerAI : public npc_escortAI
                 SetRun();
 
                 if (Player* pPlayer = GetPlayerForEscort())
-                    pPlayer->GroupEventHappens(QUEST_ID_ESCAPE_SKETTIS, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ID_ESCAPE_SKETTIS, m_creature);
 
                 break;
 
@@ -1108,7 +1107,7 @@ struct npc_skyguard_prisonerAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_skyguard_prisoner(Creature* pCreature)
+UnitAI* GetAI_npc_skyguard_prisoner(Creature* pCreature)
 {
     return new npc_skyguard_prisonerAI(pCreature);
 }
@@ -1172,7 +1171,7 @@ struct npc_avatar_of_terokkAI : public ScriptedAI
             GetPlayerListWithEntryInWorld(playerList, m_creature, 50.0f);
             for (auto& player : playerList)
                 if (player->IsActiveQuest(QUEST_SKETTIS_OFFENSIVE))
-                    player->GroupEventHappens(QUEST_SKETTIS_OFFENSIVE, m_creature);
+                    player->RewardPlayerAndGroupAtEventExplored(QUEST_SKETTIS_OFFENSIVE, m_creature);
         }
     }
 
@@ -1193,7 +1192,7 @@ struct npc_avatar_of_terokkAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_avatar_of_terokk(Creature* pCreature)
+UnitAI* GetAI_npc_avatar_of_terokk(Creature* pCreature)
 {
     return new npc_avatar_of_terokkAI(pCreature);
 }
@@ -1226,7 +1225,7 @@ struct npc_minion_of_terokkAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_minion_of_terokk(Creature* pCreature)
+UnitAI* GetAI_npc_minion_of_terokk(Creature* pCreature)
 {
     return new npc_minion_of_terokkAI(pCreature);
 }
@@ -1289,7 +1288,7 @@ struct npc_draenei_tomb_guardian : public ScriptedAI
         m_creature->ForcedDespawn();
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* sender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* sender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         if (sender->GetEntry() != NPC_VENGEFUL_HARBINGER)
             return;
@@ -1298,7 +1297,7 @@ struct npc_draenei_tomb_guardian : public ScriptedAI
         {
             case AI_EVENT_CUSTOM_A:
             {
-                harbinger = sender;
+                harbinger = static_cast<Creature*>(sender);
 
                 float x, y, z;
                 harbinger->GetContactPoint(m_creature, x, y, z, CONTACT_DISTANCE);
@@ -1322,7 +1321,7 @@ struct npc_draenei_tomb_guardian : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_draenei_tomb_guardian(Creature* pCreature)
+UnitAI* GetAI_npc_draenei_tomb_guardian(Creature* pCreature)
 {
     return new npc_draenei_tomb_guardian(pCreature);
 }
@@ -1366,7 +1365,7 @@ struct npc_vengeful_harbinger : public ScriptedAI
                 m_playerGuid = ai->GetPlayerGuid();
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* sender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* sender, Unit* /*pInvoker*/, uint32 /*uiMiscValue*/) override
     {
         if (sender != m_creature) // Sender should always be the creature itself
             return;
@@ -1457,7 +1456,7 @@ struct npc_vengeful_harbinger : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_vengeful_harbinger(Creature* pCreature)
+UnitAI* GetAI_npc_vengeful_harbinger(Creature* pCreature)
 {
     return new npc_vengeful_harbinger(pCreature);
 }

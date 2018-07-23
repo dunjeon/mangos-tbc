@@ -295,6 +295,7 @@ ChatCommand* ChatHandler::getCommandTable()
         { "delete",         SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectDeleteCommand,    "", nullptr },
         { "move",           SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectMoveCommand,      "", nullptr },
         { "near",           SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectNearCommand,      "", nullptr },
+        { "nearspawned",    SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectNearSpawnedCommand, "", nullptr },
         { "target",         SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectTargetCommand,    "", nullptr },
         { "turn",           SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectTurnCommand,      "", nullptr },
         { "activate",       SEC_GAMEMASTER,     false, &ChatHandler::HandleGameObjectActivateCommand,  "", nullptr },
@@ -452,6 +453,7 @@ ChatCommand* ChatHandler::getCommandTable()
         { "flag",           SEC_GAMEMASTER,     false, &ChatHandler::HandleNpcFlagCommand,             "", nullptr },
         { "follow",         SEC_GAMEMASTER,     false, &ChatHandler::HandleNpcFollowCommand,           "", nullptr },
         { "info",           SEC_ADMINISTRATOR,  false, &ChatHandler::HandleNpcInfoCommand,             "", nullptr },
+        { "threat",         SEC_ADMINISTRATOR,  false, &ChatHandler::HandleNpcThreatCommand,           "", nullptr },
         { "move",           SEC_GAMEMASTER,     false, &ChatHandler::HandleNpcMoveCommand,             "", nullptr },
         { "playemote",      SEC_ADMINISTRATOR,  false, &ChatHandler::HandleNpcPlayEmoteCommand,        "", nullptr },
         { "setmodel",       SEC_GAMEMASTER,     false, &ChatHandler::HandleNpcSetModelCommand,         "", nullptr },
@@ -479,6 +481,12 @@ ChatCommand* ChatHandler::getCommandTable()
     {
         { "load",           SEC_ADMINISTRATOR,  true,  &ChatHandler::HandlePDumpLoadCommand,           "", nullptr },
         { "write",          SEC_ADMINISTRATOR,  true,  &ChatHandler::HandlePDumpWriteCommand,          "", nullptr },
+        { nullptr,          0,                  false, nullptr,                                        "", nullptr }
+    };
+
+    static ChatCommand petCommandTable[] =
+    {
+        { "levelloyalty",   SEC_GAMEMASTER,     true,  &ChatHandler::HandlePetLevelLoyaltyCommand,   "", nullptr },
         { nullptr,          0,                  false, nullptr,                                        "", nullptr }
     };
 
@@ -754,6 +762,7 @@ ChatCommand* ChatHandler::getCommandTable()
         { "npc",            SEC_MODERATOR,      false, nullptr,                                        "", npcCommandTable      },
         { "pool",           SEC_GAMEMASTER,     true,  nullptr,                                        "", poolCommandTable     },
         { "pdump",          SEC_ADMINISTRATOR,  true,  nullptr,                                        "", pdumpCommandTable    },
+        { "pet",            SEC_GAMEMASTER,     true,  nullptr,                                        "", petCommandTable      },
         { "quest",          SEC_ADMINISTRATOR,  false, nullptr,                                        "", questCommandTable    },
         { "reload",         SEC_ADMINISTRATOR,  true,  nullptr,                                        "", reloadCommandTable   },
         { "reset",          SEC_ADMINISTRATOR,  true,  nullptr,                                        "", resetCommandTable    },
@@ -1984,6 +1993,14 @@ Creature* ChatHandler::getSelectedCreature() const
         return nullptr;
 
     return m_session->GetPlayer()->GetMap()->GetAnyTypeCreature(m_session->GetPlayer()->GetSelectionGuid());
+}
+
+Pet* ChatHandler::getSelectedPet() const
+{
+    if (!m_session)
+        return nullptr;
+
+    return m_session->GetPlayer()->GetMap()->GetPet(m_session->GetPlayer()->GetSelectionGuid());
 }
 
 /**

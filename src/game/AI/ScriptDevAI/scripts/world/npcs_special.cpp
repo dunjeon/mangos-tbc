@@ -238,7 +238,7 @@ struct npc_air_force_botsAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_air_force_bots(Creature* pCreature)
+UnitAI* GetAI_npc_air_force_bots(Creature* pCreature)
 {
     return new npc_air_force_botsAI(pCreature);
 }
@@ -322,7 +322,7 @@ struct npc_chicken_cluckAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_chicken_cluck(Creature* pCreature)
+UnitAI* GetAI_npc_chicken_cluck(Creature* pCreature)
 {
     return new npc_chicken_cluckAI(pCreature);
 }
@@ -388,7 +388,7 @@ struct npc_dancing_flamesAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_dancing_flames(Creature* pCreature)
+UnitAI* GetAI_npc_dancing_flames(Creature* pCreature)
 {
     return new npc_dancing_flamesAI(pCreature);
 }
@@ -639,7 +639,7 @@ struct npc_injured_patientAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_injured_patient(Creature* pCreature)
+UnitAI* GetAI_npc_injured_patient(Creature* pCreature)
 {
     return new npc_injured_patientAI(pCreature);
 }
@@ -724,8 +724,8 @@ void npc_doctorAI::PatientSaved(Creature* /*soldier*/, Player* pPlayer, Location
 
                 switch (m_creature->GetEntry())
                 {
-                    case DOCTOR_ALLIANCE: pPlayer->GroupEventHappens(QUEST_TRIAGE_A, m_creature); break;
-                    case DOCTOR_HORDE:    pPlayer->GroupEventHappens(QUEST_TRIAGE_H, m_creature); break;
+                    case DOCTOR_ALLIANCE: pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_TRIAGE_A, m_creature); break;
+                    case DOCTOR_HORDE:    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_TRIAGE_H, m_creature); break;
                     default:
                         script_error_log("Invalid entry for Triage doctor. Please check your database");
                         return;
@@ -846,7 +846,7 @@ bool QuestAccept_npc_doctor(Player* pPlayer, Creature* pCreature, const Quest* p
     return true;
 }
 
-CreatureAI* GetAI_npc_doctor(Creature* pCreature)
+UnitAI* GetAI_npc_doctor(Creature* pCreature)
 {
     return new npc_doctorAI(pCreature);
 }
@@ -1057,7 +1057,7 @@ struct npc_garments_of_questsAI : public npc_escortAI
     }
 };
 
-CreatureAI* GetAI_npc_garments_of_quests(Creature* pCreature)
+UnitAI* GetAI_npc_garments_of_quests(Creature* pCreature)
 {
     return new npc_garments_of_questsAI(pCreature);
 }
@@ -1090,7 +1090,7 @@ struct npc_guardianAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_guardian(Creature* pCreature)
+UnitAI* GetAI_npc_guardian(Creature* pCreature)
 {
     return new npc_guardianAI(pCreature);
 }
@@ -1239,7 +1239,7 @@ struct npc_redemption_targetAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_redemption_target(Creature* pCreature)
+UnitAI* GetAI_npc_redemption_target(Creature* pCreature)
 {
     return new npc_redemption_targetAI(pCreature);
 }
@@ -1280,6 +1280,7 @@ enum
 
     // combat spells
     SPELL_POISON                        = 31747,
+    SPELL_POISON_SPIT                   = 32330,
     SPELL_BORE                          = 32738,
     SPELL_ENRAGE                        = 32714,
 
@@ -1289,6 +1290,7 @@ enum
 
     // npcs that don't use bore spell
     NPC_MARAUDING_BURSTER               = 16857,
+    NPC_FULGORGE                        = 18678,
     NPC_GREATER_CRUST_BURSTER           = 21380,
 
     // npcs that use bone bore
@@ -1321,6 +1323,7 @@ struct npc_burster_wormAI : public ScriptedAI
         switch (m_creature->GetEntry())
         {
             case NPC_MARAUDING_BURSTER:
+            case NPC_FULGORGE:
                 return SPELL_TUNNEL_BORE_RED_PASSIVE;
             case NPC_HAISHULUD:
                 return SPELL_DAMAGING_TUNNEL_BORE_BONE_PASSIVE;
@@ -1398,7 +1401,6 @@ struct npc_burster_wormAI : public ScriptedAI
     void EnterEvadeMode() override
     {
         m_creature->RemoveAllAurasOnEvade();
-        m_creature->DeleteThreatList();
         m_creature->CombatStop(true);
         m_creature->LoadCreatureAddon(true);
         m_creature->SetLootRecipient(nullptr);
@@ -1461,8 +1463,10 @@ struct npc_burster_wormAI : public ScriptedAI
                 DoMeleeAttackIfReady();
             else
             {
-                if (!m_creature->IsNonMeleeSpellCasted(false))
+                if (!m_creature->IsNonMeleeSpellCasted(false) && m_creature->GetEntry() != NPC_FULGORGE)
                     DoCastSpellIfCan(m_creature->getVictim(), SPELL_POISON);
+                else if (!m_creature->IsNonMeleeSpellCasted(false))
+                    DoCastSpellIfCan(m_creature->getVictim(), SPELL_POISON_SPIT);
 
                 // if target not in range, submerge and chase
                 if (!m_creature->IsInRange(m_creature->getVictim(), 0, 50.0f))
@@ -1473,7 +1477,7 @@ struct npc_burster_wormAI : public ScriptedAI
             }
 
             // bore spell
-            if (m_creature->GetEntry() != NPC_MARAUDING_BURSTER && m_creature->GetEntry() != NPC_GREATER_CRUST_BURSTER)
+            if (m_creature->GetEntry() != NPC_MARAUDING_BURSTER && m_creature->GetEntry() != NPC_FULGORGE && m_creature->GetEntry() != NPC_GREATER_CRUST_BURSTER)
             {
                 if (m_uiBoreTimer < uiDiff)
                 {
@@ -1519,7 +1523,7 @@ struct npc_burster_wormAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_burster_worm(Creature* pCreature)
+UnitAI* GetAI_npc_burster_worm(Creature* pCreature)
 {
     return new npc_burster_wormAI(pCreature);
 }
@@ -1574,7 +1578,7 @@ struct npc_the_cleanerAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_the_cleaner(Creature* pCreature)
+UnitAI* GetAI_npc_the_cleaner(Creature* pCreature)
 {
     return new npc_the_cleanerAI(pCreature);
 }
@@ -1706,12 +1710,12 @@ struct npc_shaman_earth_elementalAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_shaman_fire_elemental(Creature* pCreature)
+UnitAI* GetAI_npc_shaman_fire_elemental(Creature* pCreature)
 {
     return new npc_shaman_fire_elementalAI(pCreature);
 }
 
-CreatureAI* GetAI_npc_shaman_earth_elemental(Creature* pCreature)
+UnitAI* GetAI_npc_shaman_earth_elemental(Creature* pCreature)
 {
     return new npc_shaman_earth_elementalAI(pCreature);
 }
@@ -1759,7 +1763,7 @@ struct npc_snakesAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_snakes(Creature* pCreature)
+UnitAI* GetAI_npc_snakes(Creature* pCreature)
 {
     return new npc_snakesAI(pCreature);
 }

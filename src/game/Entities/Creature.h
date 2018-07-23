@@ -31,7 +31,7 @@
 
 struct SpellEntry;
 
-class CreatureAI;
+class UnitAI;
 class Group;
 class Quest;
 class Player;
@@ -342,17 +342,18 @@ enum AttackingTarget
 
 enum SelectFlags
 {
-    SELECT_FLAG_IN_LOS              = 0x001,                // Default Selection Requirement for Spell-targets
-    SELECT_FLAG_PLAYER              = 0x002,
-    SELECT_FLAG_POWER_MANA          = 0x004,                // For Energy based spells, like manaburn
-    SELECT_FLAG_POWER_RAGE          = 0x008,
-    SELECT_FLAG_POWER_ENERGY        = 0x010,
-    SELECT_FLAG_IN_MELEE_RANGE      = 0x040,
-    SELECT_FLAG_NOT_IN_MELEE_RANGE  = 0x080,
-    SELECT_FLAG_HAS_AURA            = 0x100,
-    SELECT_FLAG_NOT_AURA            = 0x200,
-    SELECT_FLAG_RANGE_RANGE         = 0x400,                // For direct targeted abilities like charge or frostbolt
-    SELECT_FLAG_RANGE_AOE_RANGE     = 0x800,                // For AOE targeted abilities like frost nova
+    SELECT_FLAG_IN_LOS              = 0x0001,               // Default Selection Requirement for Spell-targets
+    SELECT_FLAG_PLAYER              = 0x0002,
+    SELECT_FLAG_POWER_MANA          = 0x0004,               // For mana based spells, like manaburn
+    SELECT_FLAG_POWER_RAGE          = 0x0008,
+    SELECT_FLAG_POWER_ENERGY        = 0x0010,
+    SELECT_FLAG_IN_MELEE_RANGE      = 0x0040,
+    SELECT_FLAG_NOT_IN_MELEE_RANGE  = 0x0080,
+    SELECT_FLAG_HAS_AURA            = 0x0100,
+    SELECT_FLAG_NOT_AURA            = 0x0200,
+    SELECT_FLAG_RANGE_RANGE         = 0x0400,               // For direct targeted abilities like charge or frostbolt
+    SELECT_FLAG_RANGE_AOE_RANGE     = 0x0800,               // For AOE targeted abilities like frost nova
+    SELECT_FLAG_POWER_NOT_MANA      = 0x1000,               // Used in some dungeon encounters
 };
 
 enum RegenStatsFlags
@@ -606,7 +607,6 @@ class Creature : public Unit
         bool CanInteractWithBattleMaster(Player* player, bool msg) const;
         bool CanTrainAndResetTalentsOf(Player* pPlayer) const;
 
-        bool IsOutOfThreatArea(Unit* pVictim) const;
         void FillGuidsListFromThreatList(GuidVector& guids, uint32 maxamount = 0);
 
         bool IsImmuneToSpell(SpellEntry const* spellInfo, bool castOnSelf) override;
@@ -632,11 +632,9 @@ class Creature : public Unit
 
         uint32 GetLevelForTarget(Unit const* target) const override; // overwrite Unit::GetLevelForTarget for boss level support
 
-        bool IsInEvadeMode() const;
-
         bool AIM_Initialize();
 
-        virtual CreatureAI* AI() override { if (m_charmInfo && m_charmInfo->GetAI()) return m_charmInfo->GetAI(); else return m_ai.get(); }
+        virtual UnitAI* AI() override { if (m_charmInfo && m_charmInfo->GetAI()) return m_charmInfo->GetAI(); else return m_ai.get(); }
         virtual CombatData* GetCombatData() override { if (m_charmInfo && m_charmInfo->GetCombatData()) return m_charmInfo->GetCombatData(); else return m_combatData; }
 
         void SetWalk(bool enable, bool asDefault = true);
@@ -647,8 +645,6 @@ class Creature : public Unit
         void SetHover(bool enable) override;
         void SetRoot(bool enable) override;
         void SetWaterWalk(bool enable) override;
-
-        bool CanCrit(const SpellEntry* entry, SpellSchoolMask schoolMask, WeaponAttackType attType) const override;
 
         // TODO: Research mob shield block values
         uint32 GetShieldBlockValue() const override { return (getLevel() / 2 + uint32(GetStat(STAT_STRENGTH) / 20)); }
@@ -722,8 +718,6 @@ class Creature : public Unit
         SpellEntry const* ReachWithSpellCure(Unit* pVictim);
 
         uint32 m_spells[CREATURE_MAX_SPELLS];
-
-        void SendAIReaction(AiReaction reactionType);
 
         void DoFleeToGetAssistance();
         void CallForHelp(float fRadius);
@@ -826,6 +820,9 @@ class Creature : public Unit
         uint32 GetDetectionRange() const override { return m_creatureInfo->Detection; }
 
         void LockOutSpells(SpellSchoolMask schoolMask, uint32 duration) override;
+
+        bool CanAggro() const { return m_canAggro; }
+        void SetCanAggro(bool canAggro) { m_canAggro = canAggro; }
     protected:
         bool MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* pSpellInfo, uint32 selectFlags, SelectAttackingTargetParams params) const;
 
@@ -845,7 +842,7 @@ class Creature : public Unit
         time_t m_respawnTime;                               // (secs) time of next respawn
         uint32 m_respawnDelay;                              // (secs) delay between corpse disappearance and respawning
         uint32 m_corpseDelay;                               // (secs) delay between death and corpse disappearance
-        uint32 m_aggroDelay;                                // (msecs)delay between respawn and aggro due to movement
+        bool m_canAggro;                                    // controls response of creature to attacks
         float m_respawnradius;
 
         CreatureSubtype m_subtype;                          // set in Creatures subclasses for fast it detect without dynamic_cast use
@@ -867,7 +864,7 @@ class Creature : public Unit
         Position m_combatStartPos;                          // after combat contains last position
         Position m_respawnPos;
 
-        std::unique_ptr<CreatureAI> m_ai;
+        std::unique_ptr<UnitAI> m_ai;
         bool m_isInvisible;
         bool m_ignoreMMAP;
         bool m_forceAttackingCapability;                    // can attack even if not selectable/not attackable

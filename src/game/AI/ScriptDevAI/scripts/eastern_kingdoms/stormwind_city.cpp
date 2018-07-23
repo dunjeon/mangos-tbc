@@ -76,7 +76,7 @@ bool QuestAccept_npc_bartleby(Player* pPlayer, Creature* pCreature, const Quest*
     return true;
 }
 
-CreatureAI* GetAI_npc_bartleby(Creature* pCreature)
+UnitAI* GetAI_npc_bartleby(Creature* pCreature)
 {
     return new npc_bartlebyAI(pCreature);
 }
@@ -189,7 +189,7 @@ bool QuestAccept_npc_dashel_stonefist(Player* pPlayer, Creature* pCreature, cons
     return true;
 }
 
-CreatureAI* GetAI_npc_dashel_stonefist(Creature* pCreature)
+UnitAI* GetAI_npc_dashel_stonefist(Creature* pCreature)
 {
     return new npc_dashel_stonefistAI(pCreature);
 }
@@ -405,7 +405,7 @@ struct npc_squire_roweAI : public npc_escortAI, private DialogueHelper
     void UpdateEscortAI(const uint32 uiDiff) { DialogueUpdate(uiDiff); }
 };
 
-CreatureAI* GetAI_npc_squire_rowe(Creature* pCreature)
+UnitAI* GetAI_npc_squire_rowe(Creature* pCreature)
 {
     return new npc_squire_roweAI(pCreature);
 }
@@ -947,7 +947,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
                 DoScriptText(EMOTE_WINDSOR_DIE, m_creature);
 
                 if (Player* pPlayer = m_creature->GetMap()->GetPlayer(m_playerGuid))
-                    pPlayer->GroupEventHappens(QUEST_THE_GREAT_MASQUERADE, m_creature);
+                    pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_THE_GREAT_MASQUERADE, m_creature);
                 break;
             case NPC_GUARD_PATROLLER:
                 // Reset Bolvar and Wrynn
@@ -1040,7 +1040,7 @@ struct npc_reginald_windsorAI : public npc_escortAI, private DialogueHelper
     }
 };
 
-CreatureAI* GetAI_npc_reginald_windsor(Creature* pCreature)
+UnitAI* GetAI_npc_reginald_windsor(Creature* pCreature)
 {
     return new npc_reginald_windsorAI(pCreature);
 }

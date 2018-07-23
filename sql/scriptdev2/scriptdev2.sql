@@ -127,11 +127,14 @@ UPDATE creature_template SET ScriptName='npc_prof_leather' WHERE entry IN (7866,
 -- UPDATE creature_template SET ScriptName='' WHERE npcflag!=npcflag|65536 AND ScriptName='npc_innkeeper';
 -- UPDATE creature_template SET ScriptName='npc_innkeeper' WHERE npcflag=npcflag|65536;
 UPDATE creature_template SET ScriptName='npc_redemption_target' WHERE entry IN (6172,6177,17542,17768);
-UPDATE creature_template SET ScriptName='npc_burster_worm' WHERE entry IN (16844,16857,16968,21380,21849,22038,22466,22482,23285);
+UPDATE creature_template SET ScriptName='npc_burster_worm' WHERE entry IN (16844,16857,16968,18678,21380,21849,22038,22466,22482,23285);
 UPDATE creature_template SET ScriptName='npc_the_cleaner' WHERE entry=14503;
 UPDATE creature_template SET ScriptName='npc_shaman_earth_elemental' WHERE entry IN(15352); -- greater earth elemental
 UPDATE creature_template SET ScriptName='npc_shaman_fire_elemental' WHERE entry IN(15438); -- greater fire elemental
 UPDATE creature_template SET ScriptName='npc_snakes' WHERE entry IN(19921,19833);
+
+/*Quest (quest scripts which are not in one zone)*/
+UPDATE creature_template SET ScriptName='npc_quest_attunement' WHERE entry IN(22421,18528,19935);
 
 /* SPELL */
 UPDATE creature_template SET ScriptName='spell_dummy_npc' WHERE entry IN (
@@ -367,6 +370,16 @@ UPDATE creature_template SET ScriptName='npc_vimgol_middle_bunny' WHERE entry=23
 UPDATE creature_template SET ScriptName='npc_vimgol' WHERE entry=22911;
 UPDATE creature_template SET ScriptName='npc_spirit_prisoner_of_bladespire' WHERE entry IN(22460);
 UPDATE creature_template SET ScriptName='npc_deadsoul_orb' WHERE entry=20845;
+UPDATE creature_template SET ScriptName='npc_evergrove_druid' WHERE entry=22423;
+INSERT INTO scripted_areatrigger VALUES
+(4613, "mobs_grishna_arrakoa"),
+(4615, "mobs_grishna_arrakoa"),
+(4616, "mobs_grishna_arrakoa"),
+(4617, "mobs_grishna_arrakoa");
+UPDATE creature_template SET ScriptName='npc_soulgrinder' WHERE entry=23019;
+UPDATE creature_template SET ScriptName='npc_mogdorg_the_wizened' WHERE entry=22941;
+UPDATE creature_template SET ScriptName='npc_supplicant' WHERE entry IN(23052,23053);
+INSERT INTO scripted_event_id VALUES(14739,'event_into_the_soulgrinder');
 
 /* BLASTED LANDS */
 UPDATE creature_template SET ScriptName='npc_fallen_hero_of_horde' WHERE entry=7572;
@@ -424,6 +437,9 @@ UPDATE creature_template SET ScriptName='npc_naturalist_bite' WHERE entry IN(178
 /* THE UNDERBOG */
 UPDATE creature_template SET ScriptName='mob_underbog_mushroom' WHERE entry=17990;
 UPDATE creature_template SET ScriptName='boss_hungarfen' WHERE entry=17770;
+UPDATE instance_template SET ScriptName='instance_underbog' WHERE map=546;
+INSERT INTO scripted_areatrigger VALUES
+(4302,'at_ghazan_surface');
 
 /* THE STEAMVAULT */
 UPDATE instance_template SET ScriptName='instance_steam_vault' WHERE map=545;
@@ -666,6 +682,7 @@ UPDATE creature_template SET ScriptName='npc_orc_necrolyte' WHERE entry=21747;
 INSERT INTO scripted_event_id VALUES
 (10591,'event_spell_summon_nightbane'),
 (10951,'event_spell_medivh_journal');
+UPDATE creature_template SET ScriptName='npc_infernal_relay' WHERE entry=17645;
 
 /* LOCH MODAN */
 UPDATE creature_template SET ScriptName='npc_mountaineer_pebblebitty' WHERE entry=3836;
@@ -872,6 +889,9 @@ UPDATE creature_template SET ScriptName='npc_spawned_oronok_tornheart' WHERE ent
 UPDATE creature_template SET ScriptName='npc_domesticated_felboar' WHERE entry=21195;
 UPDATE creature_template SET ScriptName='npc_shadowmoon_tuber_node' WHERE entry=21347;
 UPDATE creature_template SET ScriptName='npc_veneratus_spawn_node' WHERE entry=21334;
+UPDATE creature_template SET ScriptName='mob_shadowmoon_soulstealer' WHERE entry=22061;
+UPDATE creature_template SET ScriptName='npc_shadowlord_deathwail' WHERE entry=22006;
+UPDATE creature_template SET ScriptName='npc_disobedient_dragonmaw_peon' WHERE entry IN(23311);
 
 /* SHATTRATH */
 UPDATE creature_template SET ScriptName='npc_dirty_larry' WHERE entry=19720;
@@ -1001,6 +1021,7 @@ UPDATE creature_template SET ScriptName='boss_dalliah' WHERE entry=20885;
 UPDATE creature_template SET ScriptName='boss_soccothrates' WHERE entry=20886;
 UPDATE creature_template SET ScriptName='npc_warden_mellichar' WHERE entry=20904;
 UPDATE creature_template SET ScriptName='npc_millhouse_manastorm' WHERE entry=20977;
+UPDATE creature_template SET ScriptName='npc_arcatraz_defender' WHERE entry=20857;
 
 /* THE EYE */
 UPDATE instance_template SET ScriptName='instance_the_eye' WHERE map=550;
@@ -1058,6 +1079,9 @@ UPDATE creature_template SET ScriptName='npc_avatar_of_terokk' WHERE entry=22375
 UPDATE creature_template SET ScriptName='npc_minion_of_terokk' WHERE entry=22376;
 UPDATE creature_template SET ScriptName='npc_draenei_tomb_guardian' WHERE entry=22285;
 UPDATE creature_template SET ScriptName='npc_vengeful_harbinger' WHERE entry=21638;
+UPDATE creature_template SET ScriptName='boss_terokk' WHERE entry IN(21838);
+INSERT INTO scripted_event_id VALUES
+(15014, 'event_summon_terokk');
 
 /* THOUSAND NEEDLES */
 UPDATE creature_template SET ScriptName='npc_kanati' WHERE entry=10638;
@@ -2321,7 +2345,57 @@ INSERT INTO script_texts (entry,content_default,sound,type,language,emote,commen
 (-1001274,'Now you''re gonna get it good, $n!', '0', '0', '0', '0','dashel stonefist SAY_STONEFIST_1'),
 (-1001275,'Okay, okay! Enough fighting. No one else needs to get hurt.', '0', '0', '0', '0','dashel stonefist SAY_STONEFIST_2'),
 (-1001276,'It''s okay, boys. Back off. You''ve done enough. I''ll meet up with you later.', '0', '0', '0', '0','dashel stonefist SAY_STONEFIST_3'),
-(-1001277,'That could have gone better. $n, come here, please. I have something I need you to take care of for me.','0','4','0','0','Ambassador Sunsorrow - During Lament of the Highborne script');
+(-1001277,'That could have gone better. $n, come here, please. I have something I need you to take care of for me.','0','4','0','0','Ambassador Sunsorrow - During Lament of the Highborne script'),
+(-1001278,'Who calls me to this world?  The stars are not yet aligned... my powers fail me!  You will pay for this!',0,0,0,1,'Terokk SAY_SPAWN'),
+(-1001279,'Show me what you''re made of, $n!',0,6,0,1,'Terokk SAY_CHOSEN_ONE'),
+(-1001280,'Kwa! You cannot kill me, I am immortal!',0,6,0,1,'Terokk SAY_DIVINE_SHIELD'),
+(-1001281,'%s becomes enraged as his shield shatters.',0,3,0,1,'Terokk SAY_ENRAGE'),
+(-1001282,'Enemy sighted!  Fall into formation and prepare for bombing maneuvers!',0,6,0,1,'Skyguard Ace SAY_SPAWN'),
+(-1001283,'Quickly! Use the flames and support the ground troops. Its ancient magic should cleanse Terokk''s shield.',0,6,0,1,'Skyguard Ace SAY_FLAMES'),
+(-1001284,'They did it!  Enemy down!  Return to base!',0,6,0,1,'Skyguard Ace SAY_TEROKK_DOWN'),
+(-1001285,'Work is da poop! NO MORE!',0,0,0,15,'Dosobedient Dragonmaw Peon SAY_IDLE1'),
+(-1001286,'Me no work no more!',0,0,0,15,'Dosobedient Dragonmaw Peon SAY_IDLE2'),
+(-1001287,'HEY! No more booterang! Me sorry! Me work!',0,0,0,34,'Dosobedient Dragonmaw Peon SAY_BOOTERANG1'),
+(-1001288,'ARGH! BOOTERANG!',0,0,0,34,'Dosobedient Dragonmaw Peon SAY_BOOTERANG2'),
+(-1001289,'OWWWW! Ok, ok, me go back to work!',0,0,0,34,'Dosobedient Dragonmaw Peon SAY_BOOTERANG3'),
+(-1001290,'WHY IT PUT DA BOOTERANG ON DA SKIN?? WHY??',0,0,0,34,'Dosobedient Dragonmaw Peon SAY_BOOTERANG4'),
+(-1001291,'AYAYA! One day me have dat booterang...',0,0,0,34,'Dosobedient Dragonmaw Peone SAY_BOOTERANG5'),
+(-1001292,'OOF! Booterang hurted me! Me tink work better den booterang!',0,0,0,34,'Dosobedient Dragonmaw Peon SAY_BOOTERANG6');
+
+-- -1 010 000 Classic texts
+
+-- -1 015 000 TBC texts
+INSERT INTO script_texts (entry,content_default,sound,type,language,emote,comment) VALUES
+(-1015001, '%s lets loose a low, gultural growl.',0,2,0,0,'Enraged Netherwing Drake - EMOTE on script spell hit'),
+(-1015002, 'You will never get the Heart of Fury!  Its power belongs to Illidan!',0,1,0,0,'Shadowlord Deathwail - yell on descent'),
+(-1015003, '%s retrieves the Heart of Fury.',0,2,0,0,'Shadowlord Deathwail - grabs heart'),
+(-1015004, 'Master... I\'ve failed you...',0,1,0,0,'Shadowlord Deathwail - death'),
+(-1015005,'The power of Light compels you! Back to your pit!',0,0,0,0,'anchorite barada SAY_EXORCISM_RANDOM_6'),
+(-1015006,'All is lost, Anchorite! Abandon what hope remains.',0,0,0,0,'colonel jules SAY_EXORCISM_RANDOM_2'),
+(-1015007,'The Light is my guide... it is my sustenance!',0,0,0,0,'anchorite barada SAY_EXORCISM_RANDOM_7'),
+(-1015008,'Ah! Cease the incantations, Anchorite! Cease, or I will show you such pain that your pathetic people have never imagined!',0,0,0,0,'colonel jules SAY_EXORCISM_RANDOM_3'),
+(-1015009, 'You... will... leave... this... man!',0,0,0,0,'anchorite barada SAY_EXORCISM_RANDOM_2'),
+(-1015010, 'In the name of the Light! It is Light that commands you! It is Light that flung you to the depths of darkness!',0,0,0,0,'anchorite barada SAY_EXORCISM_RANDOM_4'),
+(-1015011, 'You will not succeed, mortal! This shell will lie decrepit, blistered and bleeding before I am done with it. And its spirit will be long cast into darkness.',0,0,0,0,'colonel jules SAY_EXORCISM_RANDOM_4'),
+(-1015012,'From the darkest night shall rise again the raven, shall take flight in the shadows, shall reveal the nature of its kind. Prepare yourself for its coming, for the faithful shall be elevated to take flight with the raven, the rest be forgotten to walk upon the the ground, clipped wings and shame.', 0,4,0,0,'First Prophecy for Whispers of the Raven God'),
+(-1015013,'Steel your minds and guard your thoughts. The dark wings will cloud and consume the minds of the weak, a flock of thralls whose feet may never leave the ground.', 0,4,0,0,'Second Prophecy for Whispers of the Raven God'),
+(-1015014,'The old blood will flow once again with the coming of the raven, the return of darkness in the skies. Scarlet night, and the rise of the old.', 0,4,0,0,'Third Prophecy for Whispers of the Raven God'),
+(-1015015,'The raven was struck down once for flying too high, unready. The eons have prepared the Dark Watcher for its ascent, to draw the dark cloak across the horizon.', 0,4,0,0,'Fourth Prophecy for Whispers of the Raven God'),
+(-1015016,'Argh! I will shred your soul and grind it to dust!',0,1,0,0,'Skulloc Soulgrinder on last unbanishing phase.'),
+(-1015017,'Weak, little bugs!  Your souls aren''t worth eating...',0,1,0,0,'Skulloc Soulgrinder on last unbanishing phase.'),
+(-1015018,'%s brushes up against $n and farts like only an ogre can.',0,2,0,0,'Generic Blades Edge Ogre /fart emote response'),
+(-1015019,'Me like to fart, too!',0,0,0,1,'Generic Blades Edge Ogre /fart emote response'),
+(-1015020,'The %s cowers at the sight of his angered $g king : queen;.',0,2,0,0,'Generic Blades Edge Ogre /angry emote response'),
+(-1015021,'Shh... quiet, it da new $g king : queen;.',0,0,0,0,'Bloodmaul/Bladespire Supplicant LoS text'),
+(-1015022,'$G King : Queen; $n.',0,0,0,0,'Bloodmaul/Bladespire Supplicant LoS text'),
+(-1015023,'All hail, $n, the new King of the ogres!!!',0,6,0,22,'Mog''dorg the Wizened on quest end Into the Soulgrinder'),
+(-1015024,'Aw, me not think it work out between us.',0,0,0,1,'Generic Blades Edge Ogre /kiss emote response'),
+(-1015025,'What me do wrong, my $g king : queen;?',0,0,0,16,'Generic Blades Edge Ogre /point emote response'),
+(-1015026,'$G Him : Her; so tiny!  How $g him : her; rule?',0,0,0,0,'Bloodmaul/Bladespire Supplicant LoS text'),
+(-1015027,'$G Him : Her; look too pretty to be da ruler.',0,0,0,0,'Bloodmaul/Bladespire Supplicant LoS text'),
+(-1015028,'Me live to serve.',0,0,0,0,'Bloodmaul/Bladespire Supplicant LoS text');
+
+-- -1 020 000 WOTLK texts
 
 -- -1 033 000 SHADOWFANG KEEP
 INSERT INTO script_texts (entry,content_default,sound,type,language,emote,comment) VALUES
@@ -2342,7 +2416,7 @@ INSERT INTO script_texts (entry,content_default,sound,type,language,emote,commen
 (-1033011,'If you will not serve my Master with your sword and knowledge of his enemies...',0,0,0,1,'arugal SAY_INTRO_3'),
 (-1033012,'Your moldering remains will serve ME as a testament to what happens when one is foolish enough to trespass in my domain!\n',0,0,0,0,'arugal SAY_INTRO_4'),
 
-(-1033013,'Who dares interfere with the Sons of Arugal?',0,1,0,0,'boss_arugal YELL_FENRUS'),
+(-1033013,'Who dares interfere with the Sons of Arugal?',5791,1,0,0,'boss_arugal YELL_FENRUS'),
 (-1033014,'%s vanishes.',0,2,0,0,'prisoner ashcrombe EMOTE_VANISH_AS'),
 (-1033015,'%s fumbles with the rusty lock on the courtyard door.',0,2,0,0,'prisoner adamant EMOTE_UNLOCK_DOOR_AD'),
 (-1033016,'Arrrgh!',0,0,0,0,'deathstalker vincent SAY_VINCENT_DIE'),
@@ -2524,7 +2598,9 @@ INSERT INTO script_texts (entry,content_default,sound,type,language,emote,commen
 (-1189033,'You felt death once...',0,0,0,0,'horseman SAY_PLAYER3'),
 (-1189034,'Now, know demise!',0,0,0,0,'horseman SAY_PLAYER4'),
 
-(-1189035,'The master has fallen! Avenge him my brethren!',5834,1,0,0,'trainee SAY_TRAINEE_SPAWN');
+(-1189035,'The master has fallen! Avenge him my brethren!',5834,1,0,0,'trainee SAY_TRAINEE_SPAWN'),
+
+(-1189036,'Bow down! Kneel before the Ashbringer! A new dawn approaches, brother and sisters! Our message will be delivered to the filth of this world through the chosen one!',0,6,0,0,'mograine SAY_ASHBRINGER_ENTRANCE');
 
 -- -1 209 000 ZUL'FARRAK
 INSERT INTO script_texts (entry,content_default,sound,type,language,emote,comment) VALUES
@@ -4146,7 +4222,7 @@ INSERT INTO script_texts (entry,content_default,sound,type,language,emote,commen
 (-1565008,'Maulgar is king!',11375,1,0,0,'maulgar SAY_SLAY3'),
 (-1565009,'Gruul... will crush you.',11376,1,0,0,'maulgar SAY_DEATH'),
 
-(-1565010,'Come... and die.',11355,1,0,0,'gruul SAY_AGGRO'),
+(-1565010,'Come.... and die.',11355,1,0,0,'gruul SAY_AGGRO'),
 (-1565011,'Scurry.',11356,1,0,0,'gruul SAY_SLAM1'),
 (-1565012,'No escape.',11357,1,0,0,'gruul SAY_SLAM2'),
 (-1565013,'Stay.',11358,1,0,0,'gruul SAY_SHATTER1'),
@@ -4529,7 +4605,8 @@ INSERT INTO gossip_texts (entry,content_default,comment) VALUES
 (-3532015,'Control Human Conjurer','human conjurer GOSSIP_ITEM_HUMAN_CONJURER'),
 (-3532016,'Control Human Cleric','human cleric GOSSIP_ITEM_HUMAN_CLERIC'),
 (-3532017,'Control King Llane','king llane GOSSIP_ITEM_KING_LLANE'),
-(-3532018,'Please reset the chess board, we would like to play again.','medivh GOSSIP_ITEM_RESET_BOARD');
+(-3532018,'Please reset the chess board, we would like to play again.','medivh GOSSIP_ITEM_RESET_BOARD'),
+(-3532019,'I''ll nail it!','barnes GOSSIP_ITEM_OPERA_OZ_WIPE');
 
 -- -3 534 000 THE BATTLE OF MT. HYJAL
 INSERT INTO gossip_texts (entry,content_default,comment) VALUES

@@ -41,7 +41,7 @@
 #include "Server/DBCStructure.h"
 #include "WorldPacket.h"
 #include "Timer.h"
-#include "AI/BaseAI/CreatureAI.h"
+#include "AI/BaseAI/UnitAI.h"
 
 #include <list>
 
@@ -205,6 +205,8 @@ enum SheathState
 // byte flags value (UNIT_FIELD_BYTES_2,1)
 enum UnitBytes2_Flags
 {
+    UNIT_BYTE2_CREATURE_DEBUFF_LIMIT            = 16,
+    UNIT_BYTE2_PLAYER_CONTROLLED_DEBUFF_LIMIT   = 40,
 };
 
 // byte flags value (UNIT_FIELD_BYTES_2,2)
@@ -329,6 +331,7 @@ enum TriggerCastFlags : uint32
     TRIGGERED_IGNORE_UNATTACKABLE_FLAG          = 0x00000020,   // Ignores UNIT_FLAG_NOT_ATTACKABLE in CheckTarget
     TRIGGERED_DO_NOT_PROC                       = 0x00000040,   // Spells from scripts should not proc - DBScripts for example
     TRIGGERED_PET_CAST                          = 0x00000080,   // Spell that should report error through pet opcode
+    TRIGGERED_NORMAL_COMBAT_CAST                = 0x00000100,   // AI needs to be notified about change of target
     TRIGGERED_FULL_MASK                         = 0xFFFFFFFF
 };
 
@@ -1129,12 +1132,15 @@ struct CharmInfo
             m_openerMaxRange = maxRange;
         }
 
-        CreatureAI* GetAI() { return m_ai; }
+        UnitAI* GetAI() { return m_ai; }
         CombatData* GetCombatData() { return m_combatData; };
+
+        void SetUnitFlagSave(uint32 save) { m_unitFlagSave = save; }
+        uint32 GetUnitFlagSave() { return m_unitFlagSave; }
 
     private:
         Unit*               m_unit;
-        CreatureAI*         m_ai;
+        UnitAI*             m_ai;
         CombatData*         m_combatData;
         UnitActionBarEntry  PetActionBar[MAX_UNIT_ACTION_BAR_INDEX];
         CharmSpellEntry     m_charmspells[CREATURE_MAX_SPELLS];
@@ -1151,6 +1157,8 @@ struct CharmInfo
         float               m_stayPosY;
         float               m_stayPosZ;
         float               m_stayPosO;
+
+        uint32              m_unitFlagSave;
 };
 
 // used in CallForAllControlledUnits/CheckAllControlledUnits
@@ -1726,6 +1734,7 @@ class Unit : public WorldObject
         {
             return m_spellAuraHolders.find(spellId) != m_spellAuraHolders.end();
         }
+        bool HasAuraTypeWithCaster(AuraType auratype, ObjectGuid caster) const;
 
         virtual bool HasSpell(uint32 /*spellID*/) const { return false; }
 
@@ -1783,6 +1792,7 @@ class Unit : public WorldObject
 
         void DeMorph();
 
+        void SendAIReaction(AiReaction reactionType);
         void SendAttackStateUpdate(CalcDamageInfo* damageInfo) const;
         void SendAttackStateUpdate(uint32 HitInfo, Unit* target, SpellSchoolMask damageSchoolMask, uint32 Damage, uint32 AbsorbDamage, uint32 Resist, VictimState TargetState, uint32 BlockedAmount);
         void SendSpellNonMeleeDamageLog(SpellNonMeleeDamage* log) const;
@@ -1790,6 +1800,7 @@ class Unit : public WorldObject
         void SendPeriodicAuraLog(SpellPeriodicAuraLogInfo* pInfo) const;
         void SendSpellMiss(Unit* target, uint32 spellID, SpellMissInfo missInfo) const;
         void CasterHitTargetWithSpell(Unit* realCaster, Unit* target, SpellEntry const* spellInfo);
+        bool CanInitiateAttack() const;
 
         void NearTeleportTo(float x, float y, float z, float orientation, bool casting = false);
         void MonsterMoveWithSpeed(float x, float y, float z, float speed, bool generatePath = false, bool forceDestination = false);
@@ -1824,7 +1835,8 @@ class Unit : public WorldObject
         // Convenience checkers/getters/setters counterparts for some of the protected Unit guid fields
         // See the comments next to protected methods for meanings
         bool HasCharm(ObjectGuid const& exactGuid = ObjectGuid()) const { return (exactGuid.IsEmpty() ? GetCharmGuid().IsUnit() : (GetCharmGuid() == exactGuid)); }
-        bool HasCharmer(ObjectGuid const& exactGuid = ObjectGuid()) const { return (exactGuid.IsEmpty() ? GetCharmerGuid().IsUnit() : (GetCharmerGuid() == exactGuid)); }
+        bool HasCharmer(ObjectGuid const& exactGuid) const { return exactGuid.IsUnit() && GetCharmerGuid().IsUnit() && GetCharmerGuid() == exactGuid; }
+        bool HasCharmer() const { return GetCharmerGuid().IsUnit(); }
         bool HasTarget(ObjectGuid const& exactGuid = ObjectGuid()) const { return (exactGuid.IsEmpty() ? GetTargetGuid().IsUnit() : (GetTargetGuid() == exactGuid)); }
         bool HasChannelObject(ObjectGuid const& exactGuid = ObjectGuid()) const { return (exactGuid.IsEmpty() ? !(GetChannelObjectGuid().IsEmpty()) : (GetChannelObjectGuid() == exactGuid)); }
 
@@ -2078,11 +2090,11 @@ class Unit : public WorldObject
         void AddThreat(Unit* pVictim, float threat = 0.0f, bool crit = false, SpellSchoolMask schoolMask = SPELL_SCHOOL_MASK_NONE, SpellEntry const* threatSpell = nullptr);
         float ApplyTotalThreatModifier(float threat, SpellSchoolMask schoolMask = SPELL_SCHOOL_MASK_NORMAL);
         void DeleteThreatList();
-        bool IsSecondChoiceTarget(Unit* pTarget, bool taunt, bool checkThreatArea);
+        bool IsSecondChoiceTarget(Unit* pTarget, bool checkThreatArea);
         bool SelectHostileTarget();
-        void TauntApply(Unit* pVictim);
-        void TauntFadeOut(Unit* taunter);
-        void FixateTarget(Unit* pVictim);
+        bool IsOutOfThreatArea(Unit* victim) const;
+        void TauntUpdate();
+        void FixateTarget(Unit* taunter);
         ObjectGuid GetFixateTargetGuid() const { return m_fixateTargetGuid; }
         ThreatManager& getThreatManager() { return GetCombatData()->threatManager; }
         ThreatManager const& getThreatManager() const { return const_cast<Unit*>(this)->GetCombatData()->threatManager; }
@@ -2303,6 +2315,12 @@ class Unit : public WorldObject
         virtual bool CanWalk() const = 0;
 
         void TriggerEvadeEvents();
+        void EvadeTimerExpired();
+        bool IsInEvadeMode() const { return m_evadeTimer > 0 || m_evadeMode; }
+        bool IsEvadeRegen() const { return m_evadeTimer > 0 && m_evadeTimer <= 5000 || m_evadeMode; } // Only regen after 5 seconds, or when in permanent evade
+        void StartEvadeTimer() { m_evadeTimer = 10000; } // 10 seconds after which action is taken
+        void StopEvade(); // Stops either timer or evade state
+        void SetEvade(bool state); // Propagated to pets
 
         // Take possession of an unit (pet, creature, ...)
         bool TakePossessOf(Unit* possessed);
@@ -2331,7 +2349,7 @@ class Unit : public WorldObject
         float GetAttackDistance(Unit const* pl) const;
         virtual uint32 GetDetectionRange() const { return 20.f; }
 
-        virtual CreatureAI* AI() { return nullptr; }
+        virtual UnitAI* AI() { return nullptr; }
         virtual CombatData* GetCombatData() { return m_combatData; }
 
         virtual void AddCooldown(SpellEntry const& spellEntry, ItemPrototype const* itemProto = nullptr, bool permanent = false, uint32 forcedDuration = 0) override;
@@ -2486,6 +2504,10 @@ class Unit : public WorldObject
 
         // guard to prevent chaining extra attacks
         bool m_extraAttacksExecuting;
+
+        uint32 m_evadeTimer; // Used for evade during combat when mob is not running home and target isnt reachable
+        bool m_evadeMode; // Used for evade during running home
+
     private:                                                // Error traps for some wrong args using
         // this will catch and prevent build for any cases when all optional args skipped and instead triggered used non boolean type
         // no bodies expected for this declarations

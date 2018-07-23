@@ -565,6 +565,13 @@ void Object::BuildValuesUpdate(uint8 updatetype, ByteBuffer* data, UpdateMask* u
                         }
                     }
 
+                    if (GetTypeId() == TYPEID_UNIT || GetTypeId() == TYPEID_PLAYER)
+                    {
+                        Unit* unit = (Unit*)this; // hunters mark effects should only be visible to owners and not all players
+                        if (!unit->HasAuraTypeWithCaster(SPELL_AURA_MOD_STALKED, target->GetObjectGuid()))
+                            dynflagsValue &= ~UNIT_DYNFLAG_TRACK_UNIT;
+                    }
+
                     *data << dynflagsValue;
                 }
                 else                                        // Unhandled index, just send
@@ -2172,7 +2179,7 @@ void WorldObject::AddGCD(SpellEntry const& spellEntry, uint32 forcedDuration /*=
     m_GCDCatMap.emplace(spellEntry.StartRecoveryCategory, std::chrono::milliseconds(gcdRecTime) + GetMap()->GetCurrentClockTime());
 }
 
-bool WorldObject::HaveGCD(SpellEntry const* spellEntry) const
+bool WorldObject::HasGCD(SpellEntry const* spellEntry) const
 {
     if (spellEntry)
     {

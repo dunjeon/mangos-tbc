@@ -4016,8 +4016,8 @@ INSERT INTO `mangos_string` VALUES
 (529,'   Waypoint',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (530,'   Animal random',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (531,'   Confused',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
-(532,'   Targeted to player %s (lowguid %u)',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
-(533,'   Targeted to creature %s (lowguid %u)',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+(532,'   Targeted to player %s (lowguid %u) distance %f angle %f',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+(533,'   Targeted to creature %s (lowguid %u) distance %f angle %f',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (534,'   Targeted to <NULL>',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (535,'   Home movement to (X:%f Y:%f Z:%f)',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (536,'   Home movement used for player?!?',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
@@ -4401,7 +4401,9 @@ INSERT INTO `mangos_string` VALUES
 (1633,'|cffffff00The Alliance has taken control of Halaa!|r',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (1634,'|cffffff00Halaa is defenseless!|r',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
 (1635,'|cffffff00The Horde has collected 200 silithyst!|r',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
-(1636,'|cffffff00The Alliance has collected 200 silithyst!|r',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+(1636,'|cffffff00The Alliance has collected 200 silithyst!|r',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+(1702,'Player |cffff0000%s|r [GUID: %u] has |cffff0000%f|r threat and taunt state %u',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL),
+(1703,'Showing threat for %s [Entry %u]',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
 /*!40000 ALTER TABLE `mangos_string` ENABLE KEYS */;
 UNLOCK TABLES;
 

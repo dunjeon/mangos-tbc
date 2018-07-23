@@ -83,7 +83,6 @@ struct mob_lumpAI : public ScriptedAI
             uiDamage = 0;                               // Take 0 damage
 
             m_creature->RemoveAllAuras();
-            m_creature->DeleteThreatList();
             m_creature->CombatStop(true);
 
             // should get unit_flags UNIT_FLAG_IMMUNE_TO_PLAYER | UNIT_FLAG_IMMUNE_TO_NPC at faction change, but unclear why/for what reason, skipped (no flags expected as default)
@@ -138,7 +137,7 @@ struct mob_lumpAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_mob_lump(Creature* pCreature)
+UnitAI* GetAI_mob_lump(Creature* pCreature)
 {
     return new mob_lumpAI(pCreature);
 }
@@ -201,7 +200,7 @@ struct npc_nagrand_captiveAI : public npc_escortAI
         m_uiFrostShockTimer = 6000;
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Creature* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*pSender*/, Unit* pInvoker, uint32 uiMiscValue) override
     {
         if (eventType == AI_EVENT_START_ESCORT && pInvoker->GetTypeId() == TYPEID_PLAYER)
         {
@@ -260,7 +259,7 @@ struct npc_nagrand_captiveAI : public npc_escortAI
                     DoScriptText(SAY_MAG_COMPLETE, m_creature);
 
                     if (Player* pPlayer = GetPlayerForEscort())
-                        pPlayer->GroupEventHappens(QUEST_TOTEM_KARDASH_H, m_creature);
+                        pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_TOTEM_KARDASH_H, m_creature);
 
                     SetRun();
                     break;
@@ -290,7 +289,7 @@ struct npc_nagrand_captiveAI : public npc_escortAI
                     DoScriptText(SAY_KUR_COMPLETE, m_creature);
 
                     if (Player* pPlayer = GetPlayerForEscort())
-                        pPlayer->GroupEventHappens(QUEST_TOTEM_KARDASH_A, m_creature);
+                        pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_TOTEM_KARDASH_A, m_creature);
 
                     SetRun();
                     break;
@@ -399,7 +398,7 @@ bool QuestAccept_npc_nagrand_captive(Player* pPlayer, Creature* pCreature, const
     return false;
 }
 
-CreatureAI* GetAI_npc_nagrand_captive(Creature* pCreature)
+UnitAI* GetAI_npc_nagrand_captive(Creature* pCreature)
 {
     return new npc_nagrand_captiveAI(pCreature);
 }
@@ -437,7 +436,7 @@ struct npc_creditmarker_visit_with_ancestorsAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_creditmarker_visit_with_ancestors(Creature* pCreature)
+UnitAI* GetAI_npc_creditmarker_visit_with_ancestors(Creature* pCreature)
 {
     return new npc_creditmarker_visit_with_ancestorsAI(pCreature);
 }
@@ -596,7 +595,7 @@ struct npc_rethhedronAI : public ScriptedAI
     }
 };
 
-CreatureAI* GetAI_npc_rethhedron(Creature* pCreature)
+UnitAI* GetAI_npc_rethhedron(Creature* pCreature)
 {
     return new npc_rethhedronAI(pCreature);
 }

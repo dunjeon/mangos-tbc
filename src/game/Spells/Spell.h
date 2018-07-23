@@ -483,6 +483,7 @@ class Spell
         bool m_triggerAutorepeat;
         bool m_doNotProc;
         bool m_petCast;
+        bool m_notifyAI;
 
         int32 GetCastTime() const { return m_casttime; }
         uint32 GetCastedTime() const { return m_timer; }
@@ -629,6 +630,7 @@ class Spell
         void SetTargetMap(SpellEffectIndex effIndex, uint32 targetMode, UnitList& targetUnitMap, CheckException& exception);
         bool CheckAndAddMagnetTarget(Unit* unitTarget, SpellEffectIndex effIndex, UnitList& targetUnitMap, CheckException& exception);
         static void CheckSpellScriptTargets(SQLMultiStorage::SQLMSIteratorBounds<SpellTargetEntry>& bounds, UnitList& tempTargetUnitMap, UnitList& targetUnitMap, SpellEffectIndex effIndex);
+        void FilterTargetMap(UnitList& filterUnitList, SpellEffectIndex effIndex);
 
         void FillAreaTargets(UnitList& targetUnitMap, float radius, SpellNotifyPushType pushType, SpellTargets spellTargets, WorldObject* originalCaster = nullptr);
         void FillRaidOrPartyTargets(UnitList& targetUnitMap, Unit* member, float radius, bool raid, bool withPets, bool withcaster) const;
@@ -649,7 +651,8 @@ class Spell
             uint32 damage;
             SpellMissInfo missCondition: 8;
             SpellMissInfo reflectResult: 8;
-            uint8  effectMask: 8;
+            uint8  effectHitMask : 8; // Used for all effects which actually hit a target
+            uint8  effectMask: 8; // Used for all effects a certain target was evaluated for
             bool   processed: 1;
             bool   magnet: 1;
         };

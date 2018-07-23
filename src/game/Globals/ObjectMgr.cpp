@@ -7148,8 +7148,6 @@ void ObjectMgr::LoadCreatureQuestRelations()
         CreatureInfo const* cInfo = GetCreatureTemplate(itr->first);
         if (!cInfo)
             sLog.outErrorDb("Table `creature_questrelation` have data for nonexistent creature entry (%u) and existing quest %u", itr->first, itr->second);
-        else if (!(cInfo->NpcFlags & UNIT_NPC_FLAG_QUESTGIVER))
-            sLog.outErrorDb("Table `creature_questrelation` has creature entry (%u) for quest %u, but NpcFlags does not include UNIT_NPC_FLAG_QUESTGIVER", itr->first, itr->second);
     }
 }
 
@@ -7162,8 +7160,6 @@ void ObjectMgr::LoadCreatureInvolvedRelations()
         CreatureInfo const* cInfo = GetCreatureTemplate(itr->first);
         if (!cInfo)
             sLog.outErrorDb("Table `creature_involvedrelation` have data for nonexistent creature entry (%u) and existing quest %u", itr->first, itr->second);
-        else if (!(cInfo->NpcFlags & UNIT_NPC_FLAG_QUESTGIVER))
-            sLog.outErrorDb("Table `creature_involvedrelation` has creature entry (%u) for quest %u, but NpcFlags does not include UNIT_NPC_FLAG_QUESTGIVER", itr->first, itr->second);
     }
 }
 

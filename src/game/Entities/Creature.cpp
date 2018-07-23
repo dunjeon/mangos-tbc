@@ -133,13 +133,14 @@ bool CreatureCreatePos::Relocate(Creature* cr) const
 Creature::Creature(CreatureSubtype subtype) : Unit(),
     m_lootMoney(0), m_lootGroupRecipientId(0),
     m_lootStatus(CREATURE_LOOT_STATUS_NONE),
-    m_corpseDecayTimer(0), m_respawnTime(0), m_respawnDelay(25), m_corpseDelay(60), m_aggroDelay(0), m_respawnradius(5.0f),
+    m_corpseDecayTimer(0), m_respawnTime(0), m_respawnDelay(25), m_corpseDelay(60), m_respawnradius(5.0f),
     m_subtype(subtype), m_defaultMovementType(IDLE_MOTION_TYPE), m_equipmentId(0),
     m_AlreadyCallAssistance(false), m_AlreadySearchedAssistance(false),
     m_isDeadByDefault(false), m_temporaryFactionFlags(TEMPFACTION_NONE),
     m_meleeDamageSchoolMask(SPELL_SCHOOL_MASK_NORMAL), m_originalEntry(0),
     m_gameEventVendorId(0), m_ai(nullptr), m_isInvisible(false),
-    m_ignoreMMAP(false), m_creatureInfo(nullptr), m_forceAttackingCapability(false), m_ignoreRangedTargets(false), m_countSpawns(false)
+    m_ignoreMMAP(false), m_creatureInfo(nullptr), m_forceAttackingCapability(false), m_ignoreRangedTargets(false), m_countSpawns(false),
+    m_canAggro(false)
 {
     m_regenTimer = 200;
     m_valuesCount = UNIT_END;
@@ -387,7 +388,7 @@ bool Creature::UpdateEntry(uint32 Entry, Team team, const CreatureData* data /*=
 
     // creatures always have melee weapon ready if any
     SetSheath(SHEATH_STATE_MELEE);
-    SetByteValue(UNIT_FIELD_BYTES_2, 1, 0x10);
+    SetByteValue(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_CREATURE_DEBUFF_LIMIT);
 
     if (preserveHPAndPower)
     {
@@ -545,7 +546,7 @@ void Creature::Update(uint32 update_diff, uint32 diff)
             {
                 DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "Respawning...");
                 m_respawnTime = 0;
-                m_aggroDelay = sWorld.getConfig(CONFIG_UINT32_CREATURE_RESPAWN_AGGRO_DELAY);
+                SetCanAggro(false);
                 delete loot;
                 loot = nullptr;
 
@@ -608,11 +609,6 @@ void Creature::Update(uint32 update_diff, uint32 diff)
         }
         case ALIVE:
         {
-            if (m_aggroDelay <= update_diff)
-                m_aggroDelay = 0;
-            else
-                m_aggroDelay -= update_diff;
-
             if (m_isDeadByDefault)
             {
                 if (m_corpseDecayTimer <= update_diff)
@@ -649,7 +645,7 @@ void Creature::RegenerateAll(uint32 update_diff)
     if (m_regenTimer != 0)
         return;
 
-    if (!isInCombat() || IsPolymorphed())
+    if (isInCombat() && IsEvadeRegen() || !isInCombat() || IsPolymorphed())
         RegenerateHealth();
 
     RegeneratePower();
@@ -1935,18 +1931,6 @@ bool Creature::IsVisibleInGridForPlayer(Player* pl) const
     return false;
 }
 
-void Creature::SendAIReaction(AiReaction reactionType)
-{
-    WorldPacket data(SMSG_AI_REACTION, 12);
-
-    data << GetObjectGuid();
-    data << uint32(reactionType);
-
-    ((WorldObject*)this)->SendMessageToSet(data, true);
-
-    DEBUG_FILTER_LOG(LOG_FILTER_AI_AND_MOVEGENSS, "WORLD: Sent SMSG_AI_REACTION, type %u.", reactionType);
-}
-
 void Creature::CallAssistance()
 {
     // FIXME: should player pets call for assistance?
@@ -2020,7 +2004,7 @@ bool Creature::CanInitiateAttack() const
     if (!m_forceAttackingCapability && HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE))
         return false;
 
-    if (m_aggroDelay != 0)
+    if (!CanAggro())
         return false;
 
     return true;
@@ -2035,36 +2019,6 @@ void Creature::SaveRespawnTime()
         GetMap()->GetPersistentState()->SaveCreatureRespawnTime(GetGUIDLow(), m_respawnTime);
     else if (m_corpseDecayTimer > 0)                        // dead (corpse)
         GetMap()->GetPersistentState()->SaveCreatureRespawnTime(GetGUIDLow(), time(nullptr) + m_respawnDelay + m_corpseDecayTimer / IN_MILLISECONDS);
-}
-
-bool Creature::IsOutOfThreatArea(Unit* pVictim) const
-{
-    if (!pVictim)
-        return true;
-
-    if (!pVictim->IsInMap(this))
-        return true;
-
-    if (!CanAttack(pVictim))
-        return true;
-
-    if (!pVictim->isInAccessablePlaceFor(this))
-        return true;
-
-    if (!pVictim->isVisibleForOrDetect(this, this, true))
-        return true;
-
-    if (sMapStore.LookupEntry(GetMapId())->IsDungeon())
-        return false;
-
-    float AttackDist = GetAttackDistance(pVictim);
-    float ThreatRadius = sWorld.getConfig(CONFIG_FLOAT_THREAT_RADIUS);
-
-    float x, y, z, ori;
-    GetCombatStartPosition(x, y, z, ori);
-
-    // Use AttackDistance in distance check if threat radius is lower. This prevents creature bounce in and out of combat every update tick.
-    return !pVictim->IsWithinDist3d(x, y, z, ThreatRadius > AttackDist ? ThreatRadius : AttackDist);
 }
 
 CreatureDataAddon const* Creature::GetCreatureAddon() const
@@ -2227,6 +2181,9 @@ bool Creature::MeetsSelectAttackingRequirement(Unit* pTarget, SpellEntry const* 
             if (dist > params.range.maxRange || dist < params.range.minRange)
                 return false;
         }
+
+        if ((selectFlags & SELECT_FLAG_POWER_NOT_MANA) && pTarget->GetPowerType() == POWER_MANA)
+            return false;
     }
 
     if (pSpellInfo)
@@ -2409,11 +2366,6 @@ void Creature::SelectAttackingTargets(std::vector<Unit*>& selectedTargets, Attac
             break;
         }
     }
-}
-
-bool Creature::IsInEvadeMode() const
-{
-    return !i_motionMaster.empty() && i_motionMaster.GetCurrentMovementGeneratorType() == HOME_MOTION_TYPE;
 }
 
 bool Creature::HasSpell(uint32 spellID) const
@@ -2868,14 +2820,6 @@ void Creature::SetWaterWalk(bool enable)
     WorldPacket data(enable ? SMSG_SPLINE_MOVE_WATER_WALK : SMSG_SPLINE_MOVE_LAND_WALK, 9);
     data << GetPackGUID();
     SendMessageToSet(data, true);
-}
-
-bool Creature::CanCrit(const SpellEntry* entry, SpellSchoolMask schoolMask, WeaponAttackType attType) const
-{
-    // Creatures do not crit with their spells or abilities, unless it belongs to a player (pet, totem, etc)
-    if (!GetOwnerGuid().IsPlayer())
-        return false;
-    return Unit::CanCrit(entry, schoolMask, attType);
 }
 
 void Creature::InspectingLoot()

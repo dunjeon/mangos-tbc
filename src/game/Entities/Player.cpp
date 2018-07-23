@@ -415,6 +415,8 @@ Player::Player(WorldSession* session): Unit(), m_taxiTracker(*this), m_mover(thi
     m_bHasBeenAliveAtDelayedTeleport = true;                // overwrite always at setup teleport data, so not used infact
     m_teleport_options = 0;
 
+    m_needsZoneUpdate = false;
+
     m_trade = nullptr;
 
     m_cinematic = 0;
@@ -632,7 +634,7 @@ bool Player::Create(uint32 guidlow, const std::string& name, uint8 race, uint8 c
 
     InitDisplayIds();                                       // model, scale and model data
 
-    SetByteValue(UNIT_FIELD_BYTES_2, 1, 0x28);
+    SetByteValue(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_PLAYER_CONTROLLED_DEBUFF_LIMIT);
 
     SetUInt32Value(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED);
     SetFloatValue(UNIT_MOD_CAST_SPEED, 1.0f);               // fix cast time showed in spell tooltip on client
@@ -2195,7 +2197,6 @@ void Player::SetGameMaster(bool on)
         SetPvPFreeForAll(false);
         UpdatePvPContested(false, true);
 
-        getHostileRefManager().deleteReferences();
         CombatStopWithPets();
     }
     else
@@ -5847,6 +5848,21 @@ bool Player::SetPosition(float x, float y, float z, float orientation, bool tele
 
         if (GetTrader() && !IsWithinDistInMap(GetTrader(), INTERACTION_DISTANCE))
             GetSession()->SendCancelTrade();   // will close both side trade windows
+
+        if (m_needsZoneUpdate)
+        {
+            // Get server side data
+            uint32 newzone, newarea;
+            GetZoneAndAreaId(newzone, newarea);
+            if (!MapCoordinateVsZoneCheck(x, y, GetMapId(), m_newZone))
+            {
+                sLog.outError("Delayed Zone Update: Client sent invalid zoneId for X,Y & MAP Coordinates. GUID: %u zoneId: %u Expected %u, Coords: %f %f %f", GetGUIDLow(), m_newZone, newzone, x, y, z);
+                m_newZone = newzone;
+            }
+
+            UpdateZone(m_newZone, newarea);
+            m_needsZoneUpdate = false;
+        }
     }
 
     if (m_positionStatusUpdateTimer)                        // Update position's state only on interval
@@ -7289,23 +7305,7 @@ void Player::CastItemCombatSpell(Unit* Target, WeaponAttackType attType, bool sp
         {
             uint32 proc_spell_id = pEnchant->spellid[s];
 
-            // Flametongue Weapon (Passive), Ranks (used not existed equip spell id in pre-3.x spell.dbc)
-            if (pEnchant->type[s] == ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL)
-            {
-                switch (proc_spell_id)
-                {
-                    case 10400: proc_spell_id =  8026; break; // Rank 1
-                    case 15567: proc_spell_id =  8028; break; // Rank 2
-                    case 15568: proc_spell_id =  8029; break; // Rank 3
-                    case 15569: proc_spell_id = 10445; break; // Rank 4
-                    case 16311: proc_spell_id = 16343; break; // Rank 5
-                    case 16312: proc_spell_id = 16344; break; // Rank 6
-                    case 16313: proc_spell_id = 25488; break; // Rank 7
-                    default:
-                        continue;
-                }
-            }
-            else if (pEnchant->type[s] != ITEM_ENCHANTMENT_TYPE_COMBAT_SPELL)
+            if (pEnchant->type[s] != ITEM_ENCHANTMENT_TYPE_COMBAT_SPELL)
                 continue;
 
             SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(proc_spell_id);
@@ -11367,26 +11367,6 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
                     break;
                 case ITEM_ENCHANTMENT_TYPE_EQUIP_SPELL:
                 {
-                    // Flametongue Weapon (Passive), Ranks (used not existed equip spell id in pre-3.x spell.dbc)
-                    // See Player::CastItemCombatSpell for workaround implementation
-                    if (enchant_spell_id && apply)
-                    {
-                        switch (enchant_spell_id)
-                        {
-                            case 10400:                     // Rank 1
-                            case 15567:                     // Rank 2
-                            case 15568:                     // Rank 3
-                            case 15569:                     // Rank 4
-                            case 16311:                     // Rank 5
-                            case 16312:                     // Rank 6
-                            case 16313:                     // Rank 7
-                                enchant_spell_id = 0;
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-
                     if (enchant_spell_id)
                     {
                         if (apply)
@@ -13600,7 +13580,7 @@ void Player::AreaExploredOrEventHappens(uint32 questId)
 }
 
 // not used in mangosd, function for external script library
-void Player::GroupEventHappens(uint32 questId, WorldObject const* pEventObject)
+void Player::RewardPlayerAndGroupAtEventExplored(uint32 questId, WorldObject const* pEventObject)
 {
     if (Group* pGroup = GetGroup())
     {
@@ -13921,8 +13901,23 @@ void Player::MoneyChanged(uint32 count)
     }
 }
 
+enum TitleFactions
+{
+    FACTION_LEAGUE_OF_ARATHOR       = 509, 
+    FACTION_STORMPIKE_GUARD         = 730,   
+    FACTION_SILVERWING_SENTINELS    = 890,
+
+    FACTION_DEFILERS                = 510,
+    FACTION_FROSTWOLF_CLAN          = 729,
+    FACTION_WARSONG_OUTRIDERS       = 889,
+
+    TITLE_CONQUEROR                 = 47,
+    TITLE_JUSTICAR                  = 48,
+};
+
 void Player::ReputationChanged(FactionEntry const* factionEntry)
 {
+    ReputationMgr const& repMgr = GetReputationMgr();
     for (int i = 0; i < MAX_QUEST_LOG_SIZE; ++i)
     {
         if (uint32 questid = GetQuestSlotQuestId(i))
@@ -13934,17 +13929,47 @@ void Player::ReputationChanged(FactionEntry const* factionEntry)
                     QuestStatusData& q_status = mQuestStatus[questid];
                     if (q_status.m_status == QUEST_STATUS_INCOMPLETE)
                     {
-                        if (GetReputationMgr().GetReputation(factionEntry) >= qInfo->GetRepObjectiveValue())
+                        if (repMgr.GetReputation(factionEntry) >= qInfo->GetRepObjectiveValue())
                             if (CanCompleteQuest(questid))
                                 CompleteQuest(questid);
                     }
                     else if (q_status.m_status == QUEST_STATUS_COMPLETE)
                     {
-                        if (GetReputationMgr().GetReputation(factionEntry) < qInfo->GetRepObjectiveValue())
+                        if (repMgr.GetReputation(factionEntry) < qInfo->GetRepObjectiveValue())
                             IncompleteQuest(questid);
                     }
                 }
             }
+        }
+    }
+
+    switch (factionEntry->ID)
+    {
+        case FACTION_LEAGUE_OF_ARATHOR:
+        case FACTION_STORMPIKE_GUARD:
+        case FACTION_SILVERWING_SENTINELS:
+        {
+            FactionEntry const* factionEntryArathor = sFactionStore.LookupEntry<FactionEntry>(FACTION_LEAGUE_OF_ARATHOR);
+            if (repMgr.GetRank(factionEntryArathor) < REP_EXALTED) break;
+            FactionEntry const* factionEntryStormpike = sFactionStore.LookupEntry<FactionEntry>(FACTION_STORMPIKE_GUARD);
+            if (repMgr.GetRank(factionEntryStormpike) < REP_EXALTED) break;
+            FactionEntry const* factionEntrySentinels = sFactionStore.LookupEntry<FactionEntry>(FACTION_SILVERWING_SENTINELS);
+            if (repMgr.GetRank(factionEntrySentinels) < REP_EXALTED) break;
+            SetTitle(TITLE_JUSTICAR);
+            break;
+        }
+        case FACTION_DEFILERS:
+        case FACTION_FROSTWOLF_CLAN:
+        case FACTION_WARSONG_OUTRIDERS:
+        {
+            FactionEntry const* factionEntryDefilers = sFactionStore.LookupEntry<FactionEntry>(FACTION_DEFILERS);
+            if (repMgr.GetRank(factionEntryDefilers) < REP_EXALTED) break;
+            FactionEntry const* factionEntryFrostwolf = sFactionStore.LookupEntry<FactionEntry>(FACTION_FROSTWOLF_CLAN);
+            if (repMgr.GetRank(factionEntryFrostwolf) < REP_EXALTED) break;
+            FactionEntry const* factionEntryWarsong = sFactionStore.LookupEntry<FactionEntry>(FACTION_WARSONG_OUTRIDERS);
+            if (repMgr.GetRank(factionEntryWarsong) < REP_EXALTED) break;
+            SetTitle(TITLE_CONQUEROR);
+            break;
         }
     }
 }
@@ -14374,7 +14399,7 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     uint8 gender = fields[5].GetUInt8() & 0x01;             // allowed only 1 bit values male/female cases (for fit drunk gender part)
     SetByteValue(UNIT_FIELD_BYTES_0, 2, gender);            // gender
 
-    SetByteValue(UNIT_FIELD_BYTES_2, 1, 0x28);
+    SetByteValue(UNIT_FIELD_BYTES_2, 1, UNIT_BYTE2_PLAYER_CONTROLLED_DEBUFF_LIMIT);
 
     SetUInt32Value(UNIT_FIELD_LEVEL, fields[6].GetUInt8());
     SetUInt32Value(PLAYER_XP, fields[7].GetUInt32());
@@ -17720,7 +17745,6 @@ bool Player::OnTaxiFlightUpdate(const size_t waypointIndex, const bool movement)
                 Taxi::Map map = m_taxiTracker.GetMap();
                 for (size_t next = (start ? current : current + 1); next <= waypointIndex; ++next)
                 {
-
                     const TaxiPathNodeEntry* entry = map.at(next);
                     const bool last = (entry == map.back());
                     Taxi::PathID startID = 0;
@@ -19673,7 +19697,7 @@ void Player::RewardSinglePlayerAtKill(Unit* pVictim)
     }
 }
 
-void Player::RewardPlayerAndGroupAtEvent(uint32 creature_id, WorldObject* pRewardSource)
+void Player::RewardPlayerAndGroupAtEventCredit(uint32 creature_id, WorldObject* pRewardSource)
 {
     MANGOS_ASSERT((!GetGroup() || pRewardSource) && "Player::RewardPlayerAndGroupAtEvent called for Group-Case but no source for range searching provided");
 
@@ -20188,6 +20212,12 @@ bool Player::HasTitle(uint32 bitIndex) const
     uint32 fieldIndexOffset = bitIndex / 32;
     uint32 flag = 1 << (bitIndex % 32);
     return HasFlag(PLAYER__FIELD_KNOWN_TITLES + fieldIndexOffset, flag);
+}
+
+void Player::SetTitle(uint32 titleId, bool lost)
+{
+    if (CharTitlesEntry const* titleEntry = sCharTitlesStore.LookupEntry(titleId))
+        SetTitle(titleEntry, lost);
 }
 
 void Player::SetTitle(CharTitlesEntry const* title, bool lost)

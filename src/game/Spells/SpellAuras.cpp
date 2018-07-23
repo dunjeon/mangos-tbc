@@ -277,7 +277,7 @@ pAuraHandler AuraHandler[TOTAL_AURAS] =
     &Aura::HandleAuraModRangedHaste,                        //218 SPELL_AURA_HASTE_RANGED
     &Aura::HandleModManaRegen,                              //219 SPELL_AURA_MOD_MANA_REGEN_FROM_STAT
     &Aura::HandleUnused,                                    //220 SPELL_AURA_MOD_RATING_FROM_STAT
-    &Aura::HandleNULL,                                      //221 ignored
+    &Aura::HandleAuraDetaunt,                               //221 SPELL_AURA_DETAUNT
     &Aura::HandleUnused,                                    //222 unused
     &Aura::HandleNULL,                                      //223 Cold Stare
     &Aura::HandleUnused,                                    //224 unused
@@ -1218,7 +1218,6 @@ void Aura::TriggerSpell()
                             {
                                 // "Evade"
                                 target->RemoveAurasDueToSpell(auraId);
-                                target->DeleteThreatList();
                                 target->CombatStop(true);
                                 // Recast chain (Stalagg Chain or Feugen Chain
                                 target->CastSpell(pCaster, auraId == 28097 ? 28096 : 28111, TRIGGERED_NONE);
@@ -1518,8 +1517,13 @@ void Aura::TriggerSpell()
                     case 40511:                             // Demon Transform 1
                         trigger_spell_id = 40398;
                         break;
-//                    // Ancient Flames
-//                    case 40657: break;
+                    case 40657:                             // Ancient Flames 
+                    {
+                        // 40720 is called Terokk Shield
+                        if (target->GetEntry() == 21838)
+                            target->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, target, (Creature*)target);
+                        return;
+                    }
 //                    // Ethereal Ring Cannon: Cannon Aura
 //                    case 40734: break;
 //                    // Cage Trap
@@ -1731,7 +1735,7 @@ void Aura::TriggerSpell()
 
             switch (triggeredSpellInfo->EffectImplicitTargetA[0])
             {
-                case TARGET_RANDOM_DEST_LOC: // fireball barrage
+                case TARGET_RANDOM_DEST_TARGET: // fireball barrage
                 case TARGET_CHAIN_DAMAGE:
                 case TARGET_DUELVSPLAYER:
                     triggerCaster = GetCaster();
@@ -2087,7 +2091,7 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                         target->RemoveAurasDueToSpell(32346);
                         return;
                     }
-                    case 36550:                                 // Floating Drowned
+                    case 36550:                             // Floating Drowned
                     {
                         // Possibly need some of the below to fix Vengeful Harbinger flying
 
@@ -2318,6 +2322,21 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
             case 28084:                                     // Negative Charge
                 target->RemoveAurasDueToSpell(29660);
                 return;
+            case 30019:                                     // Control Piece - Chess
+            {
+                if (target->GetTypeId() != TYPEID_PLAYER)
+                    return;
+
+                target->CastSpell(target, 30529, TRIGGERED_OLD_TRIGGERED);
+                target->RemoveAurasDueToSpell(30019);
+                target->RemoveAurasDueToSpell(30532);
+
+                Unit* chessPiece = target->GetCharm();
+                if (chessPiece)
+                    chessPiece->RemoveAurasDueToSpell(30019);
+
+                return;
+            }
             case 30410:                                     // Shadow Grasp - upon trigger
             {
                 target->InterruptSpell(CURRENT_CHANNELED_SPELL);
@@ -2549,8 +2568,8 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                     // Some has effect1 that makes the difference, however not all.
                     // Some appear to be used depending on creature location, in water, at solid ground, in air/suspended, etc
                     // For now, just handle all the same way
-                    if (target->GetTypeId() == TYPEID_UNIT)
-                        target->SetFeignDeath(apply, GetCasterGuid(), GetId());
+                    //if (target->GetTypeId() == TYPEID_UNIT)
+                    target->SetFeignDeath(apply, GetCasterGuid(), GetId());
 
                     return;
                 }
@@ -2568,8 +2587,14 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                     if (target->getClass() == CLASS_WARRIOR)
                         target->ModifyAuraState(AURA_STATE_WARRIOR_VICTORY_RUSH, apply);
                     return;
-                case 32567:                             // Green Banish State
+                case 32567:                                 // Green Banish State
                 {
+                    target->SetHover(apply);
+                    return;
+                }
+                case 35519:                                 // White Beam
+                {
+                    target->SetLevitate(apply);
                     target->SetHover(apply);
                     return;
                 }
@@ -2675,22 +2700,6 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
         }
         case SPELLFAMILY_DRUID:
         {
-            switch (GetId())
-            {
-                case 34246:                                 // Idol of the Emerald Queen
-                {
-                    if (target->GetTypeId() != TYPEID_PLAYER)
-                        return;
-
-                    if (apply)
-                        // dummy not have proper effectclassmask
-                        m_spellmod  = new SpellModifier(SPELLMOD_DOT, SPELLMOD_FLAT, m_modifier.m_amount / 7, GetId(), uint64(0x001000000000));
-
-                    ((Player*)target)->AddSpellMod(m_spellmod, apply);
-                    return;
-                }
-            }
-
             // Lifebloom
             if (GetSpellProto()->SpellFamilyFlags & uint64(0x1000000000))
             {
@@ -2715,11 +2724,11 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                         return;
 
                     // final heal
-                    if (target->IsInWorld() && GetStackAmount() > 0)
+                    if (target->IsInWorld())
                     {
                         // Lifebloom dummy store single stack amount always
                         int32 amount = m_modifier.m_amount;
-                        target->CastCustomSpell(target, 33778, &amount, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED, nullptr, this, GetCasterGuid());
+                        target->CastCustomSpell(nullptr, 33778, &amount, nullptr, nullptr, TRIGGERED_OLD_TRIGGERED, nullptr, this, GetCasterGuid());
                     }
                 }
                 return;
@@ -3589,6 +3598,35 @@ void Aura::HandleModCharm(bool apply, bool Real)
     }
     else
         caster->Uncharm(target);
+
+    if (apply)
+    {
+        switch (GetId())
+        {
+            case 32830: // Possess - invisible
+                caster->CastSpell(caster, 32832, TRIGGERED_OLD_TRIGGERED);
+                break;
+        }
+    }
+    else
+    {
+        switch (GetId())
+        {
+            case 32830: // Possess
+                target->CastSpell(target, 13360, TRIGGERED_OLD_TRIGGERED);
+                if (caster->GetTypeId() == TYPEID_UNIT)
+                    static_cast<Creature*>(caster)->ForcedDespawn();
+                break;
+            case 34630: // Scrap Reaver X6000
+                if (target->GetTypeId() == TYPEID_UNIT && target->AI())
+                    target->AI()->SendAIEvent(AI_EVENT_CUSTOM_A, target, (Creature*)target);
+                break;
+            case 33684:
+                if (caster->GetTypeId() == TYPEID_UNIT)
+                    static_cast<Creature*>(caster)->ForcedDespawn();
+                break;
+        }
+    }
 }
 
 
@@ -3724,25 +3762,13 @@ void Aura::HandleAuraModStun(bool apply, bool Real)
         Unit* caster = GetCaster();
         target->SetStunned(true, (caster ? caster->GetObjectGuid() : ObjectGuid()), GetSpellProto()->Id);
 
+        if (Unit* caster = GetCaster())
+            if (UnitAI* ai = caster->AI())
+                ai->JustStunnedTarget(GetSpellProto(), target);
+
         // Summon the Naj'entus Spine GameObject on target if spell is Impaling Spine
         if (GetId() == 39837)
-        {
-            GameObject* pObj = new GameObject;
-            if (pObj->Create(target->GetMap()->GenerateLocalLowGuid(HIGHGUID_GAMEOBJECT), 185584, target->GetMap(),
-                             target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), target->GetOrientation()))
-            {
-                pObj->SetRespawnTime(GetAuraDuration() / IN_MILLISECONDS);
-                pObj->SetSpellId(GetId());
-                target->AddGameObject(pObj);
-                target->GetMap()->Add(pObj);
-            }
-            else
-                delete pObj;
-        }
-
-        if (Unit* caster = GetCaster())
-            if (CreatureAI* ai = caster->AI())
-                ai->JustStunnedTarget(GetSpellProto(), target);
+            target->CastSpell(nullptr, 39929, TRIGGERED_OLD_TRIGGERED);
     }
     else
     {
@@ -3986,7 +4012,7 @@ void Aura::HandleAuraModRoot(bool apply, bool Real)
             target->ModifyAuraState(AURA_STATE_FROZEN, apply);
 
         if (Unit* caster = GetCaster())
-            if (CreatureAI* ai = caster->AI())
+            if (UnitAI* ai = caster->AI())
                 ai->JustRootedTarget(GetSpellProto(), target);
     }
     else
@@ -4136,18 +4162,7 @@ void Aura::HandleModTaunt(bool apply, bool Real)
     if (!target->isAlive() || !target->CanHaveThreatList())
         return;
 
-    Unit* caster = GetCaster();
-
-    if (!caster || !caster->isAlive())
-        return;
-
-    if (apply)
-        target->TauntApply(caster);
-    else
-    {
-        // When taunt aura fades out, mob will switch to previous target if current has less than 1.1 * secondthreat
-        target->TauntFadeOut(caster);
-    }
+    target->TauntUpdate();
 }
 
 /*********************************************************/
@@ -4507,6 +4522,15 @@ void Aura::HandlePeriodicTriggerSpell(bool apply, bool /*Real*/)
                 if (GetAuraDuration() >= 1 * IN_MILLISECONDS)
                     // Cast "crossed flames debuff"
                     target->CastSpell(target, 29947, TRIGGERED_OLD_TRIGGERED, nullptr, this);
+                return;
+            case 33401:                                     // Possess
+                if (Unit* caster = GetCaster())
+                    caster->CastSpell(target, 32830, TRIGGERED_NONE);
+                return;
+            case 33711:                                     // Murmur's Touch normal and heroic
+            case 38794:
+                target->CastSpell(nullptr, 33686, TRIGGERED_OLD_TRIGGERED, nullptr, this); // cast Shockwave
+                target->CastSpell(nullptr, 33673, TRIGGERED_OLD_TRIGGERED); // cast Shockwave knockup serverside
                 return;
             case 35515:                                     // Salaadin's Tesla
                 if ((m_removeMode != AURA_REMOVE_BY_STACK) && (!target->HasAura(35515)))
@@ -5111,6 +5135,14 @@ void Aura::HandleAuraModTotalManaPercentRegen(bool apply, bool /*Real*/)
 
     m_periodicTimer = m_modifier.periodictime;
     m_isPeriodic = apply;
+
+    if (GetId() == 30024 && !apply && m_removeMode == AURA_REMOVE_BY_DEFAULT) // Shade of Aran drink on interrupt
+    {
+        Unit* target = GetTarget();
+        UnitAI* ai = GetTarget()->AI();
+        if (ai && target->GetTypeId() == TYPEID_UNIT)
+            ai->SendAIEvent(AI_EVENT_CUSTOM_A, target, static_cast<Creature*>(target));
+    }
 }
 
 void Aura::HandleModRegen(bool apply, bool /*Real*/)        // eating
@@ -6295,8 +6327,6 @@ void Aura::PeriodicTick()
             if (!pCaster)
                 return;
 
-            bool canApplyHealthPart = true;
-
             // don't heal target if max health or if not alive, mostly death persistent effects from items
             if (!target->isAlive() || (target->GetHealth() == target->GetMaxHealth()))
                 return;
@@ -6686,20 +6716,6 @@ void Aura::PeriodicDummyTick()
                             target->CastSpell(target, (spell->Id == 21094 ? 21095 : 23492), TRIGGERED_OLD_TRIGGERED, nullptr);      // Spell 21095: Separation Anxiety for Majordomo Executus' adds, 23492: Separation Anxiety for Garr's adds
                     }
                     return;
-                case 30019:                                 // Control Piece
-                {
-                    if (target->GetTypeId() != TYPEID_PLAYER)
-                        return;
-
-                    Unit* chessPiece = target->GetCharm();
-                    if (!chessPiece)
-                    {
-                        target->CastSpell(target, 30529, TRIGGERED_OLD_TRIGGERED);
-                        target->RemoveAurasDueToSpell(30019);
-                        target->RemoveAurasDueToSpell(30532);
-                    }
-                    return;
-                }
 //              // Gossip NPC Periodic - Talk
                 case 32441:                                 // Brittle Bones
                     if (roll_chance_i(33))
@@ -7027,6 +7043,20 @@ void Aura::HandleAuraMirrorImage(bool apply, bool Real)
     }
 }
 
+void Aura::HandleAuraDetaunt(bool Apply, bool Real)
+{
+    // only at real add/remove aura
+    if (!Real)
+        return;
+
+    Unit* caster = GetCaster();
+
+    if (!caster || !caster->isAlive() || !caster->CanHaveThreatList())
+        return;
+
+    caster->TauntUpdate();
+}
+
 void Aura::HandleAuraSafeFall(bool Apply, bool Real)
 {
     // implemented in WorldSession::HandleMovementOpcodes
@@ -7184,7 +7214,7 @@ void SpellAuraHolder::_AddSpellAuraHolder()
     {
         if (IsPositive() && !GetSpellProto()->HasAttribute(SPELL_ATTR_NEGATIVE)) // empty positive slot
         {
-            for (uint8 i = 0; i < MAX_POSITIVE_AURAS; i++)
+            for (uint8 i = 0; i < m_target->GetByteValue(UNIT_FIELD_BYTES_2, 1); i++)
             {
                 if (m_target->GetUInt32Value((uint16)(UNIT_FIELD_AURA + i)) == 0)
                 {
@@ -7195,7 +7225,7 @@ void SpellAuraHolder::_AddSpellAuraHolder()
         }
         else                                                // empty negative slot
         {
-            for (uint8 i = MAX_POSITIVE_AURAS; i < MAX_AURAS; i++)
+            for (uint8 i = m_target->GetByteValue(UNIT_FIELD_BYTES_2, 1); i < MAX_AURAS; i++)
             {
                 if (m_target->GetUInt32Value((uint16)(UNIT_FIELD_AURA + i)) == 0)
                 {
@@ -7549,12 +7579,21 @@ void SpellAuraHolder::HandleSpellSpecificBoosts(bool apply)
         {
             switch (GetId())
             {
-                // Desperate Defense
-                case 33896:
-                {
+                case 20594: // Stoneform (dwarven racial)
+                    spellId1 = 20612;
+                    break;
+                case 32830: // Possess
+                    spellId1 = 32831;
+                    break;
+                case 33896: // Desperate Defense
                     spellId1 = 33897;
                     break;
-                }
+                case 36797: // Mind Control - Kaelthas
+                    spellId1 = 36798;
+                    break;
+                case 38511: // Persuasion - Vashj
+                    spellId1 = 38514;
+                    break;
                 default:
                     return;
             }
