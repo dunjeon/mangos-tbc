@@ -371,7 +371,11 @@ bool Creature::InitEntry(uint32 Entry, CreatureData const* data /*=nullptr*/, Ga
         m_movementInfo.AddMovementFlag(MOVEFLAG_SWIMMING);  // add swimming movement
 
     // checked at loading
-    m_defaultMovementType = MovementGeneratorType(cinfo->MovementType);
+    if (data)
+        m_defaultMovementType = MovementGeneratorType(data->movementType);
+    else
+        m_defaultMovementType = MovementGeneratorType(cinfo->MovementType);
+
     SetMeleeDamageSchool(SpellSchools(cinfo->DamageSchool));
 
     SetCanParry(!(cinfo->ExtraFlags & CREATURE_EXTRA_FLAG_NO_PARRY));
@@ -397,7 +401,16 @@ bool Creature::UpdateEntry(uint32 Entry, Team team, const CreatureData* data /*=
         SetHealthPercent(healthPercent);
     }
     else
+    {
         SelectLevel();
+        if (data)
+        {
+            uint32 curhealth = data->curhealth ? data->curhealth : GetMaxHealth();
+            uint32 curmana = data->curmana ? data->curmana : GetMaxPower(POWER_MANA);
+            SetHealth(m_deathState == ALIVE ? curhealth : 0);
+            SetPower(POWER_MANA, curmana);
+        }
+    }
 
     if (team == HORDE)
         setFaction(GetCreatureInfo()->FactionHorde);
@@ -456,7 +469,7 @@ bool Creature::UpdateEntry(uint32 Entry, Team team, const CreatureData* data /*=
             SetPvP(false);
     }
 
-    // Try difficulty dependend version before falling back to base entry
+    // Try difficulty dependent version before falling back to base entry
     CreatureTemplateSpells const* templateSpells = sCreatureTemplateSpellsStorage.LookupEntry<CreatureTemplateSpells>(GetCreatureInfo()->Entry);
     if (!templateSpells)
         templateSpells = sCreatureTemplateSpellsStorage.LookupEntry<CreatureTemplateSpells>(GetEntry());
@@ -553,12 +566,10 @@ void Creature::Update(uint32 update_diff, uint32 diff)
                 // Clear possible auras having IsDeathPersistent() attribute
                 RemoveAllAuras();
 
-                if (m_originalEntry != GetEntry())
-                {
-                    // need preserver gameevent state
-                    GameEventCreatureData const* eventData = sGameEventMgr.GetCreatureUpdateDataForActiveEvent(GetGUIDLow());
-                    UpdateEntry(m_originalEntry, TEAM_NONE, nullptr, eventData);
-                }
+                // need to preserve gameevent state
+                CreatureData const* data = sObjectMgr.GetCreatureData(GetGUIDLow());
+                GameEventCreatureData const* eventData = sGameEventMgr.GetCreatureUpdateDataForActiveEvent(GetGUIDLow());
+                UpdateEntry(m_originalEntry, TEAM_NONE, data, eventData, false);
 
                 CreatureInfo const* cinfo = GetCreatureInfo();
 
@@ -1491,14 +1502,6 @@ bool Creature::LoadFromDB(uint32 guidlow, Map* map)
         GetMap()->GetPersistentState()->SaveCreatureRespawnTime(GetGUIDLow(), 0);
     }
 
-    uint32 curhealth = data->curhealth;
-    if (curhealth)
-    {
-        curhealth = uint32(curhealth * _GetHealthMod(GetCreatureInfo()->Rank));
-        if (curhealth < 1)
-            curhealth = 1;
-    }
-
     if (sCreatureLinkingMgr.IsSpawnedByLinkedMob(this))
     {
         m_isSpawningLinked = true;
@@ -1515,12 +1518,6 @@ bool Creature::LoadFromDB(uint32 guidlow, Map* map)
             }
         }
     }
-
-    SetHealth(m_deathState == ALIVE ? curhealth : 0);
-    SetPower(POWER_MANA, data->curmana);
-
-    // checked at creature_template loading
-    m_defaultMovementType = MovementGeneratorType(data->movementType);
 
     map->Add(this);
 
@@ -1640,7 +1637,7 @@ void Creature::SetDeathState(DeathState s)
 {
     if ((s == JUST_DIED && !m_isDeadByDefault) || (s == JUST_ALIVED && m_isDeadByDefault))
     {
-        if (CreatureData const* data = sObjectMgr.GetCreatureData(GetObjectGuid().GetCounter()))
+        if (CreatureData const* data = sObjectMgr.GetCreatureData(GetGUIDLow()))
             m_respawnDelay = data->GetRandomRespawnTime();
 
         m_corpseDecayTimer = m_corpseDelay * IN_MILLISECONDS; // the max/default time for corpse decay (before creature is looted/AllLootRemovedFromCorpse() is called)
@@ -1676,7 +1673,6 @@ void Creature::SetDeathState(DeathState s)
 
         Unit::SetDeathState(ALIVE);
 
-        SetHealth(GetMaxHealth());
         SetLootRecipient(nullptr);
         if (GetTemporaryFactionFlags() & TEMPFACTION_RESTORE_RESPAWN)
             ClearTemporaryFaction();
@@ -2936,4 +2932,16 @@ void Creature::LockOutSpells(SpellSchoolMask schoolMask, uint32 duration)
         return;
 
     WorldObject::LockOutSpells(schoolMask, duration);
+}
+
+void Creature::UnsummonCleanup()
+{
+    CombatStop();
+    RemoveAllAurasOnDeath();
+    BreakCharmOutgoing();
+    BreakCharmIncoming();
+    RemoveGuardians();
+    RemoveMiniPet();
+    UnsummonAllTotems();
+    InterruptNonMeleeSpells(false);
 }
