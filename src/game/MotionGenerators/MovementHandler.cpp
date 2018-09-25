@@ -96,7 +96,7 @@ void WorldSession::HandleMoveWorldportAckOpcode()
     InstanceTemplate const* mInstance = ObjectMgr::GetInstanceTemplate(loc.mapid);
 
     // reset instance validity, except if going to an instance inside an instance
-    if (GetPlayer()->m_InstanceValid == false && !mInstance)
+    if (!GetPlayer()->m_InstanceValid && !mInstance)
         GetPlayer()->m_InstanceValid = true;
 
     GetPlayer()->SetSemaphoreTeleportFar(false);
@@ -361,7 +361,6 @@ void WorldSession::HandleSetActiveMoverOpcode(WorldPacket& recv_data)
     {
         sLog.outError("HandleSetActiveMoverOpcode: incorrect mover guid: mover is %s and should be %s",
                       _player->GetMover()->GetGuidStr().c_str(), guid.GetString().c_str());
-        return;
     }
 }
 
