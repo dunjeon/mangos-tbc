@@ -110,9 +110,10 @@ enum TutorialDataState
 
 enum WorldSessionState
 {
-    WORLD_SESSION_STATE_CREATED     = 0,
-    WORLD_SESSION_STATE_READY       = 1,
-    WORLD_SESSION_STATE_OFFLINE     = 2
+    WORLD_SESSION_STATE_CREATED        = 0,
+    WORLD_SESSION_STATE_CHAR_SELECTION = 1,
+    WORLD_SESSION_STATE_READY          = 2,
+    WORLD_SESSION_STATE_OFFLINE        = 3
 };
 
 // class to deal with packet processing
@@ -164,6 +165,7 @@ class WorldSession
 
         // Set this session have no attached socket but keep it alive for short period of time to permit a possible reconnection
         void SetOffline();
+        void SetOnline();
 
         // Request set offline, close socket and put session offline
         bool RequestNewSocket(WorldSocket* socket);
@@ -176,7 +178,7 @@ class WorldSession
 
         void SizeError(WorldPacket const& packet, uint32 size) const;
 
-        void SendPacket(WorldPacket const& packet) const;
+        void SendPacket(WorldPacket const& packet, bool forcedSend = false) const;
         void SendExpectedSpamRecords();
         void SendMotd();
         void SendNotification(const char* format, ...) const ATTR_PRINTF(2, 3);
@@ -195,9 +197,9 @@ class WorldSession
         void SetSecurity(AccountTypes security) { _security = security; }
 #ifdef BUILD_PLAYERBOT
         // Players connected without socket are bot
-        const std::string GetRemoteAddress() const { return m_Socket ? m_Socket->GetRemoteAddress() : "bot"; }
+        const std::string GetRemoteAddress() const { return m_Socket ? m_Socket->GetRemoteAddress() : "disconnected/bot"; }
 #else
-        const std::string GetRemoteAddress() const { return m_Socket->GetRemoteAddress(); }
+        const std::string GetRemoteAddress() const { return m_Socket ? m_Socket->GetRemoteAddress() : "disconnected"; }
 #endif
         void SetPlayer(Player* plr) { _player = plr; }
         uint8 Expansion() const { return m_expansion; }
@@ -218,6 +220,11 @@ class WorldSession
         bool ShouldLogOut(time_t currTime) const
         {
             return (_logoutTime > 0 && currTime >= _logoutTime + 20);
+        }
+
+        bool ShouldDisconnect(time_t currTime)
+        {
+            return (_logoutTime > 0 && currTime >= _logoutTime + 60);
         }
 
         void LogoutPlayer(bool Save);
