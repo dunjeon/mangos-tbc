@@ -609,7 +609,7 @@ class GameObject : public WorldObject
 
         bool Create(uint32 guidlow, uint32 name_id, Map* map, float x, float y, float z, float ang,
                     float rotation0 = 0.0f, float rotation1 = 0.0f, float rotation2 = 0.0f, float rotation3 = 0.0f, uint32 animprogress = GO_ANIMPROGRESS_DEFAULT, GOState go_state = GO_STATE_READY);
-        void Update(uint32 update_diff, uint32 p_time) override;
+        void Update(const uint32 diff) override;
         GameObjectInfo const* GetGOInfo() const;
 
         bool IsTransport() const;
@@ -731,11 +731,13 @@ class GameObject : public WorldObject
         bool IsEnemy(Unit const* unit) const override;
         bool IsFriend(Unit const* unit) const override;
 
-        bool CanAttackSpell(Unit* target, SpellEntry const* spellInfo = nullptr, bool isAOE = false) const override;
-        bool CanAssistSpell(Unit* target, SpellEntry const* spellInfo = nullptr) const override;
+        bool CanAttackSpell(Unit const* target, SpellEntry const* spellInfo = nullptr, bool isAOE = false) const override;
+        bool CanAssistSpell(Unit const* target, SpellEntry const* spellInfo = nullptr) const override;
 
-        void SummonLinkedTrapIfAny() const;
+        GameObject* SummonLinkedTrapIfAny() const;
         void TriggerLinkedGameObject(Unit* target) const;
+        GameObject* GetLinkedTrap();
+        void SetLinkedTrap(GameObject* linkedTrap) { m_linkedTrap = linkedTrap->GetObjectGuid(); }
 
         bool isVisibleForInState(Player const* u, WorldObject const* viewPoint, bool inVisibleList) const override;
 
@@ -799,6 +801,8 @@ class GameObject : public WorldObject
         uint32 m_delayedActionTimer;                        // used for delayed GO actions
 
         ObjectGuid m_actionTarget;                          // used for setting target of Summoning rituals
+
+        ObjectGuid m_linkedTrap;
 
         std::unique_ptr<GameObjectAI> m_AI;
 

@@ -5983,7 +5983,7 @@ void PlayerbotAI::extractQuestIds(const std::string& text, std::list<uint32>& qu
 void PlayerbotAI::MakeWeaponSkillLink(const SpellEntry* sInfo, std::ostringstream& out, uint32 skillid)
 {
     int loc = GetMaster()->GetSession()->GetSessionDbcLocale();
-    out << "|cff00ffff|Hspell:" << sInfo->Id << "|h[" << sInfo->SpellName[loc] << " : " << m_bot->GetSkillValue(skillid) << " /" << m_bot->GetMaxSkillValue(skillid) << "]|h|r";
+    out << "|cff00ffff|Hspell:" << sInfo->Id << "|h[" << sInfo->SpellName[loc] << " : " << m_bot->GetSkillValue(skillid) << " /" << m_bot->GetSkillMax(skillid) << "]|h|r";
 }
 
 // Build an hlink for spells in White
@@ -6786,7 +6786,7 @@ void PlayerbotAI::UseItem(Item* item, uint32 targetFlag, ObjectGuid targetGUID)
 
     uint8 bagIndex = item->GetBagSlot();
     uint8 slot = item->GetSlot();
-    uint8 spell_count = 0, cast_count = 0;
+    uint8 cast_count = 0;
     ObjectGuid item_guid = item->GetObjectGuid();
 
     if (uint32 questid = item->GetProto()->StartQuest)
@@ -6809,11 +6809,13 @@ void PlayerbotAI::UseItem(Item* item, uint32 targetFlag, ObjectGuid targetGUID)
     }
 
     uint32 spellId = 0;
+    uint8 spell_index = 0;
     for (uint8 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
     {
         if (item->GetProto()->Spells[i].SpellId > 0)
         {
             spellId = item->GetProto()->Spells[i].SpellId;
+            spell_index = i;
             break;
         }
     }
@@ -6856,7 +6858,7 @@ void PlayerbotAI::UseItem(Item* item, uint32 targetFlag, ObjectGuid targetGUID)
     std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_USE_ITEM, 20));
     *packet << bagIndex;
     *packet << slot;
-    *packet << spell_count;
+    *packet << spell_index;
     *packet << cast_count;
     *packet << item_guid;
     *packet << targetFlag;
@@ -9348,7 +9350,7 @@ void PlayerbotAI::_HandleCommandProcess(std::string& text, Player& fromPlayer)
     }
     else if (ExtractCommand("prospect", text, true)) // true -> "process prospect" OR "process p"
     {
-        if (m_bot->HasSkill(SKILL_JEWELCRAFTING) && m_bot->GetPureSkillValue(SKILL_JEWELCRAFTING) >= 20)
+        if (m_bot->HasSkill(SKILL_JEWELCRAFTING) && m_bot->GetSkillValuePure(SKILL_JEWELCRAFTING) >= 20)
         {
             spellId = PROSPECTING_1;
         }
@@ -10279,7 +10281,7 @@ void PlayerbotAI::_HandleCommandSpells(std::string& /*text*/, Player& fromPlayer
 
         spellName = pSpellInfo->SpellName[loc];
 
-        SkillLineAbilityMapBounds const bounds = sSpellMgr.GetSkillLineAbilityMapBounds(spellId);
+        SkillLineAbilityMapBounds const bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spellId);
 
         bool isProfessionOrRidingSpell = false;
         for (SkillLineAbilityMap::const_iterator skillIter = bounds.first; skillIter != bounds.second; ++skillIter)

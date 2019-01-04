@@ -201,13 +201,31 @@ enum SpellSchoolMask
     SPELL_SCHOOL_MASK_MAGIC   = (SPELL_SCHOOL_MASK_HOLY | SPELL_SCHOOL_MASK_SPELL),
 
     // 127
-    SPELL_SCHOOL_MASK_ALL     = (SPELL_SCHOOL_MASK_NORMAL | SPELL_SCHOOL_MASK_MAGIC)
-};
+    SPELL_SCHOOL_MASK_ALL     = (SPELL_SCHOOL_MASK_NORMAL | SPELL_SCHOOL_MASK_MAGIC),
 
-#define SPELL_SCHOOL_MASK_MAGIC                            \
-    ( SPELL_SCHOOL_MASK_HOLY | SPELL_SCHOOL_MASK_FIRE | SPELL_SCHOOL_MASK_NATURE |  \
-      SPELL_SCHOOL_MASK_FROST | SPELL_SCHOOL_MASK_SHADOW | \
-      SPELL_SCHOOL_MASK_ARCANE )
+    // Multischools reference (officially introduced)
+    SPELL_SCHOOL_MULTI_ASTRAL       = (SPELL_SCHOOL_MASK_ARCANE | SPELL_SCHOOL_MASK_NATURE),
+    SPELL_SCHOOL_MULTI_CHAOS        = (SPELL_SCHOOL_MASK_ALL),
+    SPELL_SCHOOL_MULTI_DIVINE       = (SPELL_SCHOOL_MASK_ARCANE | SPELL_SCHOOL_MASK_HOLY),
+    SPELL_SCHOOL_MULTI_ELEMENTAL    = (SPELL_SCHOOL_MASK_FIRE | SPELL_SCHOOL_MASK_FROST | SPELL_SCHOOL_MASK_NATURE),
+    SPELL_SCHOOL_MULTI_FIRESTORM    = (SPELL_SCHOOL_MASK_FIRE | SPELL_SCHOOL_MASK_NATURE),
+    SPELL_SCHOOL_MULTI_FROSTFIRE    = (SPELL_SCHOOL_MASK_FROST | SPELL_SCHOOL_MASK_FIRE),
+    SPELL_SCHOOL_MULTI_PLAGUE       = (SPELL_SCHOOL_MASK_NATURE | SPELL_SCHOOL_MASK_SHADOW),
+    SPELL_SCHOOL_MULTI_RADIANT      = (SPELL_SCHOOL_MASK_FIRE | SPELL_SCHOOL_MASK_HOLY),
+    SPELL_SCHOOL_MULTI_SHADOWFLAME  = (SPELL_SCHOOL_MASK_SHADOW | SPELL_SCHOOL_MASK_FIRE),
+    SPELL_SCHOOL_MULTI_SHADOWFROST  = (SPELL_SCHOOL_MASK_SHADOW | SPELL_SCHOOL_MASK_FROST),
+    SPELL_SCHOOL_MULTI_SHADOWSTRIKE = (SPELL_SCHOOL_MASK_SHADOW | SPELL_SCHOOL_MASK_NORMAL),
+    SPELL_SCHOOL_MULTI_SPELLSHADOW  = (SPELL_SCHOOL_MASK_ARCANE | SPELL_SCHOOL_MASK_SHADOW),
+    SPELL_SCHOOL_MULTI_TWILIGHT     = (SPELL_SCHOOL_MASK_HOLY | SPELL_SCHOOL_MASK_SHADOW),
+
+     // Multischools reference (folklore naming)
+    SPELL_SCHOOL_MULTI_CHROMATIC    = (SPELL_SCHOOL_MASK_SPELL),
+    SPELL_SCHOOL_MULTI_FROSTSTORM   = (SPELL_SCHOOL_MASK_FROST | SPELL_SCHOOL_MASK_NATURE),
+    SPELL_SCHOOL_MULTI_HOLYFROST    = (SPELL_SCHOOL_MASK_HOLY | SPELL_SCHOOL_MASK_FROST),
+    SPELL_SCHOOL_MULTI_HOLYSTORM    = (SPELL_SCHOOL_MASK_HOLY | SPELL_SCHOOL_MASK_NATURE),
+    SPELL_SCHOOL_MULTI_SPELLFIRE    = (SPELL_SCHOOL_MASK_ARCANE | SPELL_SCHOOL_MASK_FIRE),
+    SPELL_SCHOOL_MULTI_SPELLFROST   = (SPELL_SCHOOL_MASK_ARCANE | SPELL_SCHOOL_MASK_FROST),
+};
 
 inline SpellSchools GetFirstSchoolInMask(SpellSchoolMask mask)
 {
@@ -274,7 +292,7 @@ enum SpellAttributes
     SPELL_ATTR_CASTABLE_WHILE_DEAD             = 0x00800000,// 23 castable while dead TODO: Implement
     SPELL_ATTR_CASTABLE_WHILE_MOUNTED          = 0x01000000,// 24 castable while mounted
     SPELL_ATTR_DISABLED_WHILE_ACTIVE           = 0x02000000,// 25 Activate and start cooldown after aura fade or remove summoned creature or go
-    SPELL_ATTR_NEGATIVE                        = 0x04000000,// 26 Almost all negative spell have it
+    SPELL_ATTR_AURA_IS_DEBUFF                  = 0x04000000,// 26
     SPELL_ATTR_CASTABLE_WHILE_SITTING          = 0x08000000,// 27 castable while sitting
     SPELL_ATTR_CANT_USED_IN_COMBAT             = 0x10000000,// 28 Cannot be used in combat
     SPELL_ATTR_UNAFFECTED_BY_INVULNERABILITY   = 0x20000000,// 29 unaffected by invulnerability (hmm possible not...)
@@ -356,7 +374,7 @@ enum SpellAttributesEx2
 
 enum SpellAttributesEx3
 {
-    SPELL_ATTR_EX3_UNK0                        = 0x00000001,// 0
+    SPELL_ATTR_EX3_OUT_OF_COMBAT_ATTACK        = 0x00000001,// 0 Spell landed counts as hostile action against enemy even if it doesn't trigger combat state, propagates PvP flags
     SPELL_ATTR_EX3_UNK1                        = 0x00000002,// 1
     SPELL_ATTR_EX3_UNK2                        = 0x00000004,// 2
     SPELL_ATTR_EX3_BLOCKABLE_SPELL             = 0x00000008,// 3 TODO: Investigate more
@@ -430,7 +448,7 @@ enum SpellAttributesEx5
 {
     SPELL_ATTR_EX5_CAN_CHANNEL_WHEN_MOVING     = 0x00000001,// 0 don't interrupt channeling spells when moving
     SPELL_ATTR_EX5_NO_REAGENT_WHILE_PREP       = 0x00000002,// 1 not need reagents if UNIT_FLAG_PREPARATION
-    SPELL_ATTR_EX5_UNK2                        = 0x00000004,// 2 removed at enter arena (e.g. 31850 since 3.3.3)
+    SPELL_ATTR_EX5_REMOVE_ON_ARENA_ENTER       = 0x00000004,// 2 removed at enter arena (e.g. 31850 since 3.3.3)
     SPELL_ATTR_EX5_USABLE_WHILE_STUNNED        = 0x00000008,// 3 usable while stunned
     SPELL_ATTR_EX5_UNK4                        = 0x00000010,// 4
     SPELL_ATTR_EX5_SINGLE_TARGET_SPELL         = 0x00000020,// 5 Only one target can be apply at a time
@@ -1053,95 +1071,6 @@ enum WeaponAttackType                                       //< The different we
 };
 
 #define MAX_ATTACK  3
-
-enum Targets
-{
-    TARGET_NONE                        = 0,
-    TARGET_SELF                        = 1,
-    TARGET_RANDOM_ENEMY_CHAIN_IN_AREA  = 2,                 // only one spell has that, but regardless, it's a target type after all
-    TARGET_RANDOM_FRIEND_CHAIN_IN_AREA = 3,
-    TARGET_RANDOM_UNIT_CHAIN_IN_AREA   = 4,                 // some plague spells that are infectious - maybe targets not-infected friends inrange
-    TARGET_PET                         = 5,
-    TARGET_CHAIN_DAMAGE                = 6,
-    TARGET_AREAEFFECT_INSTANT          = 7,                 // targets around provided destination point
-    TARGET_AREAEFFECT_CUSTOM           = 8,
-    TARGET_INNKEEPER_COORDINATES       = 9,                 // uses in teleport to innkeeper spells
-    TARGET_11                          = 11,                // used by spell 4 'Word of Recall Other'
-    TARGET_ALL_ENEMY_IN_AREA           = 15,
-    TARGET_ALL_ENEMY_IN_AREA_INSTANT   = 16,
-    TARGET_TABLE_X_Y_Z_COORDINATES     = 17,                // uses in teleport spells and some other
-    TARGET_EFFECT_SELECT               = 18,                // highly depends on the spell effect
-    TARGET_ALL_PARTY_AROUND_CASTER     = 20,
-    TARGET_SINGLE_FRIEND               = 21,
-    TARGET_CASTER_COORDINATES          = 22,                // used only in TargetA, target selection dependent from TargetB
-    TARGET_GAMEOBJECT                  = 23,
-    TARGET_IN_FRONT_OF_CASTER          = 24,
-    TARGET_DUELVSPLAYER                = 25,
-    TARGET_GAMEOBJECT_ITEM             = 26,
-    TARGET_MASTER                      = 27,
-    TARGET_ALL_ENEMY_IN_AREA_CHANNELED = 28,
-    TARGET_29                          = 29,
-    TARGET_ALL_FRIENDLY_UNITS_AROUND_CASTER = 30,           // select friendly for caster object faction (in different original caster faction) in TargetB used only with TARGET_ALL_AROUND_CASTER and in self casting range in TargetA
-    TARGET_ALL_FRIENDLY_UNITS_IN_AREA  = 31,
-    TARGET_MINION                      = 32,
-    TARGET_ALL_PARTY                   = 33,
-    TARGET_ALL_PARTY_AROUND_CASTER_2   = 34,                // used in Tranquility
-    TARGET_SINGLE_PARTY                = 35,
-    TARGET_ALL_HOSTILE_UNITS_AROUND_CASTER = 36,
-    TARGET_AREAEFFECT_PARTY            = 37,
-    TARGET_SCRIPT                      = 38,
-    TARGET_SELF_FISHING                = 39,
-    TARGET_FOCUS_OR_SCRIPTED_GAMEOBJECT = 40,
-    TARGET_TOTEM_EARTH                 = 41,
-    TARGET_TOTEM_WATER                 = 42,
-    TARGET_TOTEM_AIR                   = 43,
-    TARGET_TOTEM_FIRE                  = 44,
-    TARGET_CHAIN_HEAL                  = 45,
-    TARGET_SCRIPT_COORDINATES          = 46,
-    TARGET_DYNAMIC_OBJECT_FRONT        = 47,
-    TARGET_DYNAMIC_OBJECT_BEHIND       = 48,
-    TARGET_DYNAMIC_OBJECT_LEFT_SIDE    = 49,
-    TARGET_DYNAMIC_OBJECT_RIGHT_SIDE   = 50,
-    TARGET_AREAEFFECT_GO_AROUND_SOURCE = 51,
-    TARGET_AREAEFFECT_GO_AROUND_DEST   = 52,                // gameobject around destination, select by spell_script_target
-    TARGET_CURRENT_ENEMY_COORDINATES   = 53,                // set unit coordinates as dest, only 16 target B imlemented
-    TARGET_LARGE_FRONTAL_CONE          = 54,
-    TARGET_DEST_CASTER_FRONT_LEAP      = 55,                // for a leap spell
-    TARGET_ALL_RAID_AROUND_CASTER      = 56,
-    TARGET_SINGLE_FRIEND_2             = 57,
-    TARGET_58                          = 58,
-    TARGET_FRIENDLY_FRONTAL_CONE       = 59,
-    TARGET_NARROW_FRONTAL_CONE         = 60,
-    TARGET_AREAEFFECT_PARTY_AND_CLASS  = 61,
-    TARGET_62                          = 62,
-    TARGET_DUELVSPLAYER_COORDINATES    = 63,
-    TARGET_INFRONT_OF_VICTIM           = 64,
-    TARGET_BEHIND_VICTIM               = 65,                // used in teleport behind spells, caster/target dependent from spell effect
-    TARGET_RIGHT_FROM_VICTIM           = 66,
-    TARGET_LEFT_FROM_VICTIM            = 67,
-    TARGET_70                          = 70,
-    TARGET_RANDOM_DEST_CASTER          = 72,                // used in teleport onto nearby locations
-    TARGET_RANDOM_DEST_CASTER_CIRCUMFERENCE = 73,
-    TARGET_RANDOM_DEST_TARGET          = 74,
-    TARGET_RANDOM_DEST_TARGET_CIRCUMFERENCE = 75,                // TODO: Possibly reimplement
-    TARGET_DYNAMIC_OBJECT_COORDINATES  = 76,
-    TARGET_SINGLE_ENEMY                = 77,
-    TARGET_POINT_AT_NORTH              = 78,                // 78-85 possible _COORDINATES at radius with pi/4 step around target in unknown order, N?
-    TARGET_POINT_AT_SOUTH              = 79,                // S?
-    TARGET_POINT_AT_EAST               = 80,                // 80/81 must be symmetric from line caster->target, E (base at 82/83, 84/85 order) ?
-    TARGET_POINT_AT_WEST               = 81,                // 80/81 must be symmetric from line caster->target, W (base at 82/83, 84/85 order) ?
-    TARGET_POINT_AT_NE                 = 82,                // from spell desc: "(NE)"
-    TARGET_POINT_AT_NW                 = 83,                // from spell desc: "(NW)"
-    TARGET_POINT_AT_SE                 = 84,                // from spell desc: "(SE)"
-    TARGET_POINT_AT_SW                 = 85,                // from spell desc: "(SW)"
-    TARGET_RANDOM_NEARBY_DEST          = 86,                // "Test Nearby Dest Random" - random around selected destination
-    TARGET_DEST_DESTINATION            = 87,
-    TARGET_88                          = 88,                // Smoke Flare(s)
-    TARGET_NONCOMBAT_PET               = 90,
-    TARGET_DEST_RADIUS                 = 91,
-    TARGET_SUMMONER                    = 92,
-    TARGET_93                          = 93,
-};
 
 enum SpellMissInfo
 {
