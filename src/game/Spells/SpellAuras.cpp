@@ -213,7 +213,7 @@ pAuraHandler AuraHandler[TOTAL_AURAS] =
     &Aura::HandleNoImmediateEffect,                         //152 SPELL_AURA_MOD_DETECTED_RANGE         implemented in Creature::GetAttackDistance
     &Aura::HandleNoImmediateEffect,                         //153 SPELL_AURA_SPLIT_DAMAGE_FLAT          implemented in Unit::CalculateAbsorbAndResist
     &Aura::HandleNoImmediateEffect,                         //154 SPELL_AURA_MOD_STEALTH_LEVEL          implemented in Unit::isVisibleForOrDetect
-    &Aura::HandleNoImmediateEffect,                         //155 SPELL_AURA_MOD_WATER_BREATHING        implemented in Player::getMaxTimer
+    &Aura::HandleModWaterBreathing,                         //155 SPELL_AURA_MOD_WATER_BREATHING
     &Aura::HandleNoImmediateEffect,                         //156 SPELL_AURA_MOD_REPUTATION_GAIN        implemented in Player::CalculateReputationGain
     &Aura::HandleUnused,                                    //157 SPELL_AURA_PET_DAMAGE_MULTI (single test like spell 20782, also single for 214 aura)
     &Aura::HandleShieldBlockValue,                          //158 SPELL_AURA_MOD_SHIELD_BLOCKVALUE
@@ -1690,11 +1690,11 @@ void Aura::TriggerSpell()
             }
             case SPELLFAMILY_MAGE:
             {
-                switch (auraId)
+                /*switch (auraId)
                 {
                     default:
                         break;
-                }
+                }*/
                 break;
             }
             case SPELLFAMILY_WARRIOR:
@@ -2409,6 +2409,18 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
                 }
                 break;
             }
+            case SPELLFAMILY_PRIEST:
+            {
+                switch (GetId())
+                {
+                    case 30238:             // Lordaeron's Blessing
+                    {
+                        target->CastSpell(target, 31906, TRIGGERED_OLD_TRIGGERED);
+                        return;
+                    }
+                }
+                break;
+            }
         }
     }
     // AT REMOVE
@@ -2536,6 +2548,11 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
             {
                 if (target->HasAura(30168))
                     target->RemoveAurasDueToSpell(30168); // remove Shadow cage if stacks are 5
+            }
+            case 30238:                                     // Lordaeron's Bleesing
+            {
+                target->RemoveAurasDueToSpell(31906);
+                return;
             }
             case 32045:                                     // Soul Charge
             {
@@ -3006,6 +3023,23 @@ void Aura::HandleAuraDummy(bool apply, bool Real)
         }
         case SPELLFAMILY_ROGUE:
             break;
+        case SPELLFAMILY_PALADIN:
+        {
+            switch (GetId())
+            {
+                case 21082:                                 // Seal of the Crusader, rank 1
+                case 20162:                                 // rank 2
+                case 20305:                                 // rank 3
+                case 20306:                                 // rank 4
+                case 20307:                                 // rank 5
+                case 20308:                                 // rank 6
+                case 27158:                                 // rank 7
+                    ApplyPercentModFloatVar(target->m_modAttackBaseDPSPct[BASE_ATTACK], 40, !apply);
+                    target->UpdateDamagePhysical(BASE_ATTACK);
+                    return;
+            }
+            break;
+        }
         case SPELLFAMILY_SHAMAN:
         {
             switch (GetId())
@@ -3129,11 +3163,20 @@ void Aura::HandleAuraHover(bool apply, bool Real)
     GetTarget()->SetHover(apply);
 }
 
-void Aura::HandleWaterBreathing(bool /*apply*/, bool /*Real*/)
+void Aura::HandleWaterBreathing(bool apply, bool /*Real*/)
 {
-    // update timers in client
-    if (GetTarget()->GetTypeId() == TYPEID_PLAYER)
-        ((Player*)GetTarget())->UpdateMirrorTimers();
+    Unit* target = GetTarget();
+
+    if (target->GetTypeId() == TYPEID_PLAYER)
+        static_cast<Player*>(target)->SetWaterBreathingIntervalMultiplier(apply ? 0 : target->GetTotalAuraMultiplier(SPELL_AURA_MOD_WATER_BREATHING));
+}
+
+void Aura::HandleModWaterBreathing(bool /*apply*/, bool /*Real*/)
+{
+    Unit* target = GetTarget();
+
+    if (target->GetTypeId() == TYPEID_PLAYER)
+        static_cast<Player*>(target)->SetWaterBreathingIntervalMultiplier(target->GetTotalAuraMultiplier(SPELL_AURA_MOD_WATER_BREATHING));
 }
 
 void Aura::HandleAuraModShapeshift(bool apply, bool Real)
@@ -3634,11 +3677,7 @@ void Aura::HandleAuraModSkill(bool apply, bool /*Real*/)
     const int16 amount = int16(mod->m_amount);
     const bool permanent = (mod->m_auraname == SPELL_AURA_MOD_SKILL_TALENT);
 
-    if (target->ModifySkillBonus(skillId, (apply ? amount : -amount), permanent))
-    {
-        if (skillId == SKILL_DEFENSE)
-            target->UpdateDefenseBonusesMod();
-    }
+    target->ModifySkillBonus(skillId, (apply ? amount : -amount), permanent);
 }
 
 void Aura::HandleChannelDeathItem(bool apply, bool Real)
@@ -3993,17 +4032,17 @@ void Aura::HandleAuraModDisarm(bool apply, bool Real)
 
     target->ApplyModFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_DISARMED, apply);
 
-    if (target->GetTypeId() != TYPEID_PLAYER)
-        return;
-
     // main-hand attack speed already set to special value for feral form already and don't must change and reset at remove.
     if (target->IsInFeralForm())
         return;
 
-    if (apply)
-        target->SetAttackTime(BASE_ATTACK, BASE_ATTACK_TIME);
-    else
-        ((Player*)target)->SetRegularAttackTime();
+    if (target->GetTypeId() == TYPEID_PLAYER)
+    {
+        if (apply)
+            target->SetAttackTime(BASE_ATTACK, BASE_ATTACK_TIME);
+        else
+            ((Player*)target)->SetRegularAttackTime();
+    }
 
     target->UpdateDamagePhysical(BASE_ATTACK);
 }
@@ -4697,6 +4736,7 @@ void Aura::HandleAuraModSchoolImmunity(bool apply, bool Real)
             ++next;
             SpellEntry const* spell = iter->second->GetSpellProto();
             if ((GetSpellSchoolMask(spell) & school_mask)   // Check for school mask
+                    && !iter->second->IsPassive()
                     && !spell->HasAttribute(SPELL_ATTR_UNAFFECTED_BY_INVULNERABILITY)   // Spells unaffected by invulnerability
                     && !iter->second->IsPositive()          // Don't remove positive spells
                     && spell->Id != GetId())                // Don't remove self
@@ -6247,9 +6287,17 @@ void Aura::HandleAuraGhost(bool apply, bool /*Real*/)
     Player* player = (Player*)GetTarget();
 
     if (apply)
+    {
         player->SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
+        if (!player->HasAuraType(SPELL_AURA_WATER_WALK))
+            player->SetWaterWalk(true);
+    }
     else
+    {
         player->RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
+        if (!player->HasAuraType(SPELL_AURA_WATER_WALK))
+            player->SetWaterWalk(false);
+    }
 
     if (player->GetGroup())
         player->SetGroupUpdateFlag(GROUP_UPDATE_FLAG_STATUS);
@@ -6365,9 +6413,6 @@ void Aura::HandleSpiritOfRedemption(bool apply, bool Real)
     {
         if (target->GetTypeId() == TYPEID_PLAYER)
         {
-            // disable breath/etc timers
-            ((Player*)target)->StopMirrorTimers();
-
             // set stand state (expected in this form)
             if (!target->IsStandState())
                 target->SetStandState(UNIT_STAND_STATE_STAND);
@@ -6519,7 +6564,7 @@ void Aura::PeriodicTick()
             }
 
             uint32 absorb = 0;
-            uint32 resist = 0;
+            int32 resist = 0;
             CleanDamage cleanDamage =  CleanDamage(0, BASE_ATTACK, MELEE_HIT_NORMAL);
 
             // SpellDamageBonus for magic spells
@@ -6544,9 +6589,7 @@ void Aura::PeriodicTick()
                 // 5..8 ticks have normal tick damage
             }
 
-            // As of 2.2 resilience reduces damage from DoT ticks as much as the chance to not be critically hit
-            // Reduce dot damage from resilience for players
-            pdamage -= target->GetDoTDamageReduction(pdamage);
+            pdamage -= target->GetResilienceRatingDamageReduction(pdamage, SpellDmgClass(spellProto->DmgClass), true);
 
             target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), IsResistableSpell(spellProto));
 
@@ -6558,7 +6601,11 @@ void Aura::PeriodicTick()
             // Set trigger flag
             uint32 procAttacker = PROC_FLAG_ON_DO_PERIODIC; //  | PROC_FLAG_SUCCESSFUL_HARMFUL_SPELL_HIT;
             uint32 procVictim   = PROC_FLAG_ON_TAKE_PERIODIC;// | PROC_FLAG_TAKEN_HARMFUL_SPELL_HIT;
-            pdamage = (pdamage <= absorb + resist) ? 0 : (pdamage - absorb - resist);
+
+            const uint32 bonus = (resist < 0 ? uint32(std::abs(resist)) : 0);
+            pdamage += bonus;
+            const uint32 malus = (resist > 0 ? (absorb + uint32(resist)) : absorb);
+            pdamage = (pdamage <= malus ? 0 : (pdamage - malus));
 
             SpellPeriodicAuraLogInfo pInfo(this, pdamage, absorb, resist, 0.0f);
             target->SendPeriodicAuraLog(&pInfo);
@@ -6597,21 +6644,16 @@ void Aura::PeriodicTick()
             }
 
             uint32 absorb = 0;
-            uint32 resist = 0;
+            int32 resist = 0;
             CleanDamage cleanDamage =  CleanDamage(0, BASE_ATTACK, MELEE_HIT_NORMAL);
 
-            uint32 pdamage = m_modifier.m_amount > 0 ? m_modifier.m_amount : 0;
+            uint32 pdamage = (m_modifier.m_amount > 0 ? uint32(m_modifier.m_amount) : 0);
 
             pdamage = target->SpellDamageBonusTaken(pCaster, spellProto, pdamage, DOT, GetStackAmount());
 
-            // As of 2.2 resilience reduces damage from DoT ticks as much as the chance to not be critically hit
-            // Reduce dot damage from resilience for players
-            pdamage -= target->GetDoTDamageReduction(pdamage);
+            pdamage -= target->GetResilienceRatingDamageReduction(pdamage, SpellDmgClass(spellProto->DmgClass), true);
 
             target->CalculateDamageAbsorbAndResist(pCaster, GetSpellSchoolMask(spellProto), DOT, pdamage, &absorb, &resist, IsReflectableSpell(spellProto), IsResistableSpell(spellProto));
-
-            if (target->GetHealth() < pdamage)
-                pdamage = uint32(target->GetHealth());
 
             DETAIL_FILTER_LOG(LOG_FILTER_PERIODIC_AFFECTS, "PeriodicTick: %s health leech of %s for %u dmg inflicted by %u abs is %u",
                               GetCasterGuid().GetString().c_str(), target->GetGuidStr().c_str(), pdamage, GetId(), absorb);
@@ -6626,7 +6668,13 @@ void Aura::PeriodicTick()
             uint32 procAttacker = PROC_FLAG_ON_DO_PERIODIC; // | PROC_FLAG_SUCCESSFUL_HARMFUL_SPELL_HIT;
             uint32 procVictim   = PROC_FLAG_ON_TAKE_PERIODIC;// | PROC_FLAG_TAKEN_HARMFUL_SPELL_HIT;
 
-            pdamage = (pdamage <= absorb + resist) ? 0 : (pdamage - absorb - resist);
+            const uint32 bonus = (resist < 0 ? uint32(std::abs(resist)) : 0);
+            pdamage += bonus;
+            const uint32 malus = (resist > 0 ? (absorb + uint32(resist)) : absorb);
+            pdamage = (pdamage <= malus ? 0 : (pdamage - malus));
+
+            pdamage = std::min(pdamage, target->GetHealth());
+
             if (pdamage)
                 procVictim |= PROC_FLAG_TAKEN_ANY_DAMAGE;
 
@@ -6775,9 +6823,7 @@ void Aura::PeriodicTick()
 
             int32 drain_amount = target->GetPower(power) > pdamage ? pdamage : target->GetPower(power);
 
-            // resilience reduce mana draining effect at spell crit damage reduction (added in 2.4)
-            if (power == POWER_MANA)
-                drain_amount -= target->GetManaDrainReduction(uint32(drain_amount));
+            drain_amount -= target->GetResilienceRatingDamageReduction(uint32(drain_amount), SpellDmgClass(spellProto->DmgClass), false, power);
 
             target->ModifyPower(power, -drain_amount);
 
@@ -6944,9 +6990,7 @@ void Aura::PeriodicTick()
             if (!target->isAlive() || target->GetPowerType() != powerType)
                 return;
 
-            // resilience reduce mana draining effect at spell crit damage reduction (added in 2.4)
-            if (powerType == POWER_MANA)
-                pdamage -= target->GetManaDrainReduction(uint32(pdamage));
+            pdamage -= target->GetResilienceRatingDamageReduction(uint32(pdamage), SpellDmgClass(spellProto->DmgClass), false, powerType);
 
             uint32 gain = uint32(-target->ModifyPower(powerType, -pdamage));
 

@@ -294,7 +294,7 @@ void Spell::EffectInstaKill(SpellEffectIndex /*eff_idx*/)
 void Spell::EffectEnvironmentalDMG(SpellEffectIndex eff_idx)
 {
     uint32 absorb = 0;
-    uint32 resist = 0;
+    int32 resist = 0;
 
     // Note: this hack with damage replace required until GO casting not implemented
     // environment damage spells already have around enemies targeting but this not help in case nonexistent GO casting support
@@ -2417,15 +2417,16 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
                 case 1661:
                 {
                     uint32 healthPerc = uint32((float(m_caster->GetHealth()) / m_caster->GetMaxHealth()) * 100);
-                    int32 melee_mod = 10;
+                    int32 haste_mod = 10;
                     if (healthPerc <= 40)
-                        melee_mod = 30;
+                        haste_mod = 30;
                     if (healthPerc < 100 && healthPerc > 40)
-                        melee_mod = 10 + (100 - healthPerc) / 3;
+                        haste_mod = 10 + (100 - healthPerc) / 3;
 
-                    int32 hasteModBasePoints0 = melee_mod;  // (EffectBasePoints[0]+1)-1+(5-melee_mod) = (melee_mod-1+1)-1+5-melee_mod = 5-1
-                    int32 hasteModBasePoints1 = (5 - melee_mod);
-                    int32 hasteModBasePoints2 = 5;
+                    // haste_mod is the same for all effects
+                    int32 hasteModBasePoints0 = haste_mod;	// Haste Melee
+                    int32 hasteModBasePoints1 = haste_mod;	// Haste Range
+                    int32 hasteModBasePoints2 = haste_mod;	// Haste Cast
 
                     // FIXME: custom spell required this aura state by some unknown reason, we not need remove it anyway
                     m_caster->ModifyAuraState(AURA_STATE_BERSERKING, true);
@@ -3484,10 +3485,9 @@ void Spell::EffectPowerDrain(SpellEffectIndex eff_idx)
     damage = m_caster->SpellDamageBonusDone(unitTarget, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE);
     damage = unitTarget->SpellDamageBonusTaken(m_caster, m_spellInfo, uint32(damage), SPELL_DIRECT_DAMAGE);
 
-    // resilience reduce mana draining effect at spell crit damage reduction (added in 2.4)
     uint32 power = damage;
-    if (powerType == POWER_MANA)
-        power -= unitTarget->GetManaDrainReduction(power);
+
+    power -= unitTarget->GetResilienceRatingDamageReduction(power, SpellDmgClass(m_spellInfo->DmgClass), false, powerType);
 
     int32 new_damage;
     if (curPower < power)
@@ -3543,10 +3543,9 @@ void Spell::EffectPowerBurn(SpellEffectIndex eff_idx)
 
     int32 curPower = int32(unitTarget->GetPower(powertype));
 
-    // resilience reduce mana draining effect at spell crit damage reduction (added in 2.4)
     int32 power = damage;
-    if (powertype == POWER_MANA)
-        power -= unitTarget->GetManaDrainReduction(uint32(power));
+
+    power -= unitTarget->GetResilienceRatingDamageReduction(uint32(power), SpellDmgClass(m_spellInfo->DmgClass), false, powertype);
 
     int32 new_damage = (curPower < power) ? curPower : power;
 
@@ -5075,12 +5074,10 @@ void Spell::EffectLearnSkill(SpellEffectIndex eff_idx)
 
     uint16 skillid =  uint16(m_spellInfo->EffectMiscValue[eff_idx]);
     uint16 step = uint16(damage);
-    uint16 current = std::max(uint16(1), target->GetSkillValuePure(skillid));
-    uint16 max = (step * 75);
-    target->SetSkill(skillid, current, max, step);
+    target->SetSkillStep(skillid, step);
 
     if (WorldObject const* caster = GetCastingObject())
-        DEBUG_LOG("Spell: %s has learned skill %u (to maxlevel %u) from %s", target->GetGuidStr().c_str(), skillid, max, caster->GetGuidStr().c_str());
+        DEBUG_LOG("Spell: %s teaches %s skill %u (to step %u)", caster->GetGuidStr().c_str(), target->GetGuidStr().c_str(), skillid, step);
 }
 
 void Spell::EffectAddHonor(SpellEffectIndex /*eff_idx*/)
@@ -8329,6 +8326,9 @@ void Spell::EffectPlayerPull(SpellEffectIndex eff_idx)
     float dist = unitTarget->GetDistance(m_caster, false);
     if (damage && dist > damage)
         dist = float(damage);
+
+    if (dist < 0.1f)
+        return;
 
     // Projectile motion
     float speedXY = float(m_spellInfo->EffectMiscValue[eff_idx]) * 0.1f;

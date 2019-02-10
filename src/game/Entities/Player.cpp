@@ -134,6 +134,139 @@ enum CharacterFlags
 
 static const uint32 corpseReclaimDelay[MAX_DEATH_COUNT] = {30, 60, 120};
 
+MirrorTimer::Status MirrorTimer::FetchStatus()
+{
+    Status status = m_status;
+    m_status = UNCHANGED;
+    return status;
+}
+
+void MirrorTimer::Stop()
+{
+    if (m_active)
+    {
+        m_active = false;
+        m_pulse.SetCurrent(0);
+        m_tracker.SetCurrent(0);
+        m_status = STATUS_UPDATE;
+    }
+}
+
+void MirrorTimer::Start(uint32 interval, uint32 spellId/* = 0*/)
+{
+    if (m_scale < 0)
+    {
+        m_active = true;
+        m_pulse.SetCurrent(0);
+        m_pulse.SetInterval(2 * IN_MILLISECONDS);
+        m_tracker.SetCurrent(0);
+        m_tracker.SetInterval(interval);
+        m_spellId = spellId;
+        m_status = FULL_UPDATE;
+    }
+    else
+        Stop();
+}
+
+void MirrorTimer::Start(uint32 current, uint32 max, uint32 spellId)
+{
+    Start(max, spellId);
+
+    if (m_active)
+    {
+        m_tracker.SetCurrent(max - current);
+        SetFrozen(false);
+    }
+}
+
+void MirrorTimer::SetRemaining(uint32 duration)
+{
+    if (!duration)
+        return Stop();
+
+    if (IsActive() && duration != GetRemaining())
+        m_status = FULL_UPDATE;
+
+    m_tracker.SetCurrent(GetDuration() - duration);
+}
+
+void MirrorTimer::SetDuration(uint32 duration)
+{
+    if (!duration)
+        return Stop();
+
+    if (IsActive() && duration != GetDuration())
+        m_status = FULL_UPDATE;
+
+    m_tracker.SetInterval(duration);
+}
+
+void MirrorTimer::SetFrozen(bool state)
+{
+    if (IsActive() && state != IsFrozen())
+        m_status = STATUS_UPDATE;
+
+    m_frozen = state;
+}
+
+void MirrorTimer::SetScale(int32 scale)
+{
+    if (!scale)
+        return SetFrozen(true);
+
+    if (IsActive() && scale != m_scale)
+        m_status = FULL_UPDATE;
+
+    m_scale = scale;
+}
+
+bool MirrorTimer::Update(uint32 diff)
+{
+    if (!IsActive() || IsFrozen())
+        return true;
+
+    diff *= uint32(std::abs(m_scale));
+
+    if (m_scale < 0)    // Timer running out
+    {
+        m_tracker.Update(diff);
+
+        if (!m_tracker.Passed())
+            return true;
+
+        const uint32 interval = m_tracker.GetInterval();
+        const uint32 overflow = (m_tracker.GetCurrent() - interval);
+
+        m_tracker.SetCurrent(interval);
+
+        if (overflow == diff)   // Pulse: subsequent ticks after instant tick on expiration
+        {
+            m_pulse.Update(overflow);
+
+            if (!m_pulse.Passed())
+                return true;
+
+            m_pulse.Reset();
+        }
+
+        return false;
+    }
+    else                // Timer regenerating
+    {
+        const uint32 current = m_tracker.GetCurrent();
+
+        if (current > diff)
+        {
+            m_tracker.SetCurrent(current - diff);
+            m_pulse.SetCurrent(0);
+        }
+        else
+            Stop();
+
+        return true;
+    }
+}
+
 //== PlayerTaxi ================================================
 
 PlayerTaxi::PlayerTaxi()
@@ -430,13 +563,6 @@ Player::Player(WorldSession* session): Unit(), m_taxiTracker(*this), m_mover(thi
 
     m_lastLiquid = nullptr;
 
-    for (int& i : m_MirrorTimer)
-        i = DISABLED_MIRROR_TIMER;
-
-    m_MirrorTimerFlags = UNDERWATER_NONE;
-    m_MirrorTimerFlagsLast = UNDERWATER_NONE;
-
-    m_isInWater = false;
     m_drunkTimer = 0;
     m_drunk = 0;
     m_restTime = 0;
@@ -697,7 +823,7 @@ bool Player::Create(uint32 guidlow, const std::string& name, uint8 race, uint8 c
         SetPower(POWER_MANA, GetMaxPower(POWER_MANA));
     }
 
-    // original spells
+    LearnDefaultSkills();
     learnDefaultSpells();
 
     // original action bar
@@ -851,32 +977,6 @@ Item* Player::StoreNewItemInInventorySlot(uint32 itemEntry, uint32 amount)
     return nullptr;
 }
 
-void Player::SendMirrorTimer(MirrorTimerType Type, uint32 MaxValue, uint32 CurrentValue, int32 Regen)
-{
-    if (int(MaxValue) == DISABLED_MIRROR_TIMER)
-    {
-        if (int(CurrentValue) != DISABLED_MIRROR_TIMER)
-            StopMirrorTimer(Type);
-        return;
-    }
-    WorldPacket data(SMSG_START_MIRROR_TIMER, (21));
-    data << (uint32)Type;
-    data << CurrentValue;
-    data << MaxValue;
-    data << Regen;
-    data << (uint8)0;
-    data << (uint32)0;                                      // spell id
-    GetSession()->SendPacket(data);
-}
-
-void Player::StopMirrorTimer(MirrorTimerType Type)
-{
-    m_MirrorTimer[Type] = DISABLED_MIRROR_TIMER;
-    WorldPacket data(SMSG_STOP_MIRROR_TIMER, 4);
-    data << (uint32)Type;
-    GetSession()->SendPacket(data);
-}
-
 uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
 {
     if (!isAlive() || isGameMaster())
@@ -884,7 +984,7 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
 
     // Absorb, resist some environmental damage type
     uint32 absorb = 0;
-    uint32 resist = 0;
+    int32 resist = 0;
     if (type == DAMAGE_LAVA)
     {
         // TODO: Find out if we should sent packet
@@ -896,7 +996,10 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
     else if (type == DAMAGE_SLIME)
         CalculateDamageAbsorbAndResist(this, SPELL_SCHOOL_MASK_NATURE, DIRECT_DAMAGE, damage, &absorb, &resist);
 
-    damage -= absorb + resist;
+    const uint32 bonus = (resist < 0 ? uint32(std::abs(resist)) : 0);
+    damage += bonus;
+    const uint32 malus = (resist > 0 ? (absorb + uint32(resist)) : absorb);
+    damage = (damage <= malus ? 0 : (damage - malus));
 
     DamageEffectType damageType = SELF_DAMAGE;
     if (type == DAMAGE_FALL && getClass() == CLASS_ROGUE)
@@ -904,7 +1007,7 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
 
     DealDamageMods(this, damage, &absorb, damageType);
 
-    SendEnvironmentalDamageLog(type, damage, absorb, int32(resist));
+    SendEnvironmentalDamageLog(type, damage, absorb, resist);
 
     uint32 final_damage = DealDamage(this, damage, nullptr, damageType, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
 
@@ -918,159 +1021,6 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
     }
 
     return final_damage;
-}
-
-int32 Player::getMaxTimer(MirrorTimerType timer) const
-{
-    switch (timer)
-    {
-        case FATIGUE_TIMER:
-            if (GetSession()->GetSecurity() >= (AccountTypes)sWorld.getConfig(CONFIG_UINT32_TIMERBAR_FATIGUE_GMLEVEL))
-                return DISABLED_MIRROR_TIMER;
-            return sWorld.getConfig(CONFIG_UINT32_TIMERBAR_FATIGUE_MAX) * IN_MILLISECONDS;
-        case BREATH_TIMER:
-        {
-            if (!isAlive() || HasAuraType(SPELL_AURA_WATER_BREATHING) ||
-                    GetSession()->GetSecurity() >= (AccountTypes)sWorld.getConfig(CONFIG_UINT32_TIMERBAR_BREATH_GMLEVEL))
-                return DISABLED_MIRROR_TIMER;
-            int32 UnderWaterTime = sWorld.getConfig(CONFIG_UINT32_TIMERBAR_BREATH_MAX) * IN_MILLISECONDS;
-            AuraList const& mModWaterBreathing = GetAurasByType(SPELL_AURA_MOD_WATER_BREATHING);
-            for (auto i : mModWaterBreathing)
-                UnderWaterTime = uint32(UnderWaterTime * (100.0f + i->GetModifier()->m_amount) / 100.0f);
-            return UnderWaterTime;
-        }
-        case FIRE_TIMER:
-        {
-            if (!isAlive() || GetSession()->GetSecurity() >= (AccountTypes)sWorld.getConfig(CONFIG_UINT32_TIMERBAR_FIRE_GMLEVEL))
-                return DISABLED_MIRROR_TIMER;
-            return sWorld.getConfig(CONFIG_UINT32_TIMERBAR_FIRE_MAX) * IN_MILLISECONDS;
-        }
-        default:
-            return 0;
-    }
-}
-
-void Player::UpdateMirrorTimers()
-{
-    // Desync flags for update on next HandleDrowning
-    if (m_MirrorTimerFlags)
-        m_MirrorTimerFlagsLast = ~m_MirrorTimerFlags;
-}
-
-void Player::HandleDrowning(uint32 time_diff)
-{
-    if (!m_MirrorTimerFlags)
-        return;
-
-    // In water
-    if (m_MirrorTimerFlags & UNDERWATER_INWATER)
-    {
-        // Breath timer not activated - activate it
-        if (m_MirrorTimer[BREATH_TIMER] == DISABLED_MIRROR_TIMER)
-        {
-            m_MirrorTimer[BREATH_TIMER] = getMaxTimer(BREATH_TIMER);
-            SendMirrorTimer(BREATH_TIMER, m_MirrorTimer[BREATH_TIMER], m_MirrorTimer[BREATH_TIMER], -1);
-        }
-        else
-        {
-            m_MirrorTimer[BREATH_TIMER] -= time_diff;
-            // Timer limit - need deal damage
-            if (m_MirrorTimer[BREATH_TIMER] < 0)
-            {
-                m_MirrorTimer[BREATH_TIMER] += 2 * IN_MILLISECONDS;
-                // Calculate and deal damage
-                // TODO: Check this formula
-                uint32 damage = GetMaxHealth() / 5 + urand(0, getLevel() - 1);
-                EnvironmentalDamage(DAMAGE_DROWNING, damage);
-            }
-            else if (!(m_MirrorTimerFlagsLast & UNDERWATER_INWATER))      // Update time in client if need
-                SendMirrorTimer(BREATH_TIMER, getMaxTimer(BREATH_TIMER), m_MirrorTimer[BREATH_TIMER], -1);
-        }
-    }
-    else if (m_MirrorTimer[BREATH_TIMER] != DISABLED_MIRROR_TIMER)        // Regen timer
-    {
-        int32 UnderWaterTime = getMaxTimer(BREATH_TIMER);
-        // Need breath regen
-        m_MirrorTimer[BREATH_TIMER] += 10 * time_diff;
-        if (m_MirrorTimer[BREATH_TIMER] >= UnderWaterTime || !isAlive())
-            StopMirrorTimer(BREATH_TIMER);
-        else if (m_MirrorTimerFlagsLast & UNDERWATER_INWATER)
-            SendMirrorTimer(BREATH_TIMER, UnderWaterTime, m_MirrorTimer[BREATH_TIMER], 10);
-    }
-
-    // In dark water
-    if (m_MirrorTimerFlags & UNDERWATER_INDARKWATER)
-    {
-        // Fatigue timer not activated - activate it
-        if (m_MirrorTimer[FATIGUE_TIMER] == DISABLED_MIRROR_TIMER)
-        {
-            m_MirrorTimer[FATIGUE_TIMER] = getMaxTimer(FATIGUE_TIMER);
-            SendMirrorTimer(FATIGUE_TIMER, m_MirrorTimer[FATIGUE_TIMER], m_MirrorTimer[FATIGUE_TIMER], -1);
-        }
-        else
-        {
-            m_MirrorTimer[FATIGUE_TIMER] -= time_diff;
-            // Timer limit - need deal damage or teleport ghost to graveyard
-            if (m_MirrorTimer[FATIGUE_TIMER] < 0)
-            {
-                m_MirrorTimer[FATIGUE_TIMER] += 2 * IN_MILLISECONDS;
-                if (isAlive())                              // Calculate and deal damage
-                {
-                    uint32 damage = GetMaxHealth() / 5 + urand(0, getLevel() - 1);
-                    EnvironmentalDamage(DAMAGE_EXHAUSTED, damage);
-                }
-                else if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))       // Teleport ghost to graveyard
-                    RepopAtGraveyard();
-            }
-            else if (!(m_MirrorTimerFlagsLast & UNDERWATER_INDARKWATER))
-                SendMirrorTimer(FATIGUE_TIMER, getMaxTimer(FATIGUE_TIMER), m_MirrorTimer[FATIGUE_TIMER], -1);
-        }
-    }
-    else if (m_MirrorTimer[FATIGUE_TIMER] != DISABLED_MIRROR_TIMER)       // Regen timer
-    {
-        int32 DarkWaterTime = getMaxTimer(FATIGUE_TIMER);
-        m_MirrorTimer[FATIGUE_TIMER] += 10 * time_diff;
-        if (m_MirrorTimer[FATIGUE_TIMER] >= DarkWaterTime || !isAlive())
-            StopMirrorTimer(FATIGUE_TIMER);
-        else if (m_MirrorTimerFlagsLast & UNDERWATER_INDARKWATER)
-            SendMirrorTimer(FATIGUE_TIMER, DarkWaterTime, m_MirrorTimer[FATIGUE_TIMER], 10);
-    }
-
-    if (m_MirrorTimerFlags & (UNDERWATER_INLAVA /*| UNDERWATER_INSLIME*/) && !(m_lastLiquid && m_lastLiquid->SpellId))
-    {
-        // Breath timer not activated - activate it
-        if (m_MirrorTimer[FIRE_TIMER] == DISABLED_MIRROR_TIMER)
-            m_MirrorTimer[FIRE_TIMER] = getMaxTimer(FIRE_TIMER);
-        else
-        {
-            m_MirrorTimer[FIRE_TIMER] -= time_diff;
-            if (m_MirrorTimer[FIRE_TIMER] < 0)
-            {
-                m_MirrorTimer[FIRE_TIMER] += 2 * IN_MILLISECONDS;
-                // Calculate and deal damage
-                // TODO: Check this formula
-                uint32 damage = urand(600, 700);
-                if (m_MirrorTimerFlags & UNDERWATER_INLAVA)
-                    EnvironmentalDamage(DAMAGE_LAVA, damage);
-                // need to skip Slime damage in Undercity,
-                // maybe someone can find better way to handle environmental damage
-                //else if (m_zoneUpdateId != 1497)
-                //    EnvironmentalDamage(DAMAGE_SLIME, damage);
-            }
-        }
-    }
-    else
-        m_MirrorTimer[FIRE_TIMER] = DISABLED_MIRROR_TIMER;
-
-    // Recheck timers flag
-    m_MirrorTimerFlags &= ~UNDERWATER_EXIST_TIMERS;
-    for (int i : m_MirrorTimer)
-        if (i != DISABLED_MIRROR_TIMER)
-        {
-            m_MirrorTimerFlags |= UNDERWATER_EXIST_TIMERS;
-            break;
-        }
-    m_MirrorTimerFlagsLast = m_MirrorTimerFlags;
 }
 
 /// The player sobers by 256 every 10 seconds
@@ -1119,6 +1069,279 @@ void Player::SetDrunkValue(uint16 newDrunkenValue, uint32 itemId)
     SendMessageToSet(data, true);
 }
 
+uint32 Player::GetWaterBreathingInterval() const
+{
+    return uint32(sWorld.getConfig(CONFIG_UINT32_MIRRORTIMER_BREATH_MAX) * IN_MILLISECONDS * m_environmentBreathingMultiplier);
+}
+
+void Player::SetWaterBreathingIntervalMultiplier(float multiplier)
+{
+    m_environmentBreathingMultiplier = multiplier;
+
+    if (const uint32 interval = GetWaterBreathingInterval())
+    {
+        m_mirrorTimers[MirrorTimer::BREATH].SetDuration(interval);
+        m_mirrorTimers[MirrorTimer::BREATH].SetScale(IsUnderwater() ? -1 : 10);
+    }
+    else
+        m_mirrorTimers[MirrorTimer::BREATH].SetScale(10);
+}
+
+void Player::SetEnvironmentFlags(EnvironmentFlags flags, bool apply)
+{
+    if (bool(m_environmentFlags & flags) == apply)
+        return;
+
+    if (apply)
+        m_environmentFlags |= flags;
+    else
+        m_environmentFlags &= ~flags;
+
+    // On liquid in/out change
+    if (flags & ENVIRONMENT_MASK_IN_LIQUID)
+    {
+        // remove auras that need water/land
+        RemoveAurasWithInterruptFlags(apply ? AURA_INTERRUPT_FLAG_NOT_ABOVEWATER : AURA_INTERRUPT_FLAG_NOT_UNDERWATER);
+
+        // move player's guid into HateOfflineList of those mobs
+        // which can't swim and move guid back into ThreatList when
+        // on surface.
+        // TODO: exist also swimming mobs, and function must be symmetric to enter/leave water
+        getHostileRefManager().updateThreatTables();
+    }
+
+    // On moving in/out high sea area: affect fatigue timer
+    if (flags & ENVIRONMENT_FLAG_HIGH_SEA)
+        m_mirrorTimers[MirrorTimer::FATIGUE].SetScale(apply ? -1 : 10);
+
+    // On swimming down/up liquid surface level: affect breath timer
+    if (flags & ENVIRONMENT_FLAG_UNDERWATER)
+        m_mirrorTimers[MirrorTimer::BREATH].SetScale((apply && GetWaterBreathingInterval()) ? -1 : 10);
+
+    // On moving in/out hazardous liquids: affect environmental timer
+    if ((flags & ENVIRONMENT_MASK_LIQUID_HAZARD))
+        m_mirrorTimers[MirrorTimer::ENVIRONMENTAL].SetScale((m_environmentFlags & ENVIRONMENT_MASK_LIQUID_HAZARD) ? -1 : 10);
+}
+
+void Player::SendMirrorTimerStart(uint32 type, uint32 remaining, uint32 duration, int32 scale, bool paused/* = false*/, uint32 spellId/* = 0*/)
+{
+    WorldPacket data(SMSG_START_MIRROR_TIMER, (4 + 4 + 4 + 4 + 1 + 4));
+    data << uint32(type);
+    data << uint32(remaining);
+    data << uint32(duration);
+    data << int32(scale);
+    data << uint8(paused);
+    data << uint32(spellId);
+    GetSession()->SendPacket(data);
+}
+
+void Player::SendMirrorTimerStop(uint32 type)
+{
+    WorldPacket data(SMSG_STOP_MIRROR_TIMER, 4);
+    data << uint32(type);
+    GetSession()->SendPacket(data);
+}
+
+void Player::SendMirrorTimerPause(uint32 type, bool state)
+{
+    // Note: Default UI handler for this is bugged, args dont match
+    // Gotta do a full update with SMSG_START_MIRROR_TIMER to avoid lua errors
+    WorldPacket data(SMSG_PAUSE_MIRROR_TIMER, (4 + 1));
+    data << uint32(type);
+    data << uint8(state);
+    GetSession()->SendPacket(data);
+}
+
+void Player::FreezeMirrorTimers(bool state)
+{
+    for (auto& timer : m_mirrorTimers)
+    {
+        if (!timer.GetSpellId())
+            timer.SetFrozen(state);
+    }
+}
+
+void Player::SendMirrorTimers(bool forced/*= false*/)
+{
+    for (auto& timer : m_mirrorTimers)
+    {
+        if (timer.GetType() >= MirrorTimer::NUM_CLIENT_TIMERS)
+            return;
+
+        MirrorTimer::Status status = timer.FetchStatus();
+
+        if (forced && timer.IsActive())
+            status = MirrorTimer::FULL_UPDATE;
+
+        switch (status)
+        {
+            case MirrorTimer::FULL_UPDATE:
+                SendMirrorTimerStart(timer.GetType(), timer.GetRemaining(), timer.GetDuration(), timer.GetScale(), timer.IsFrozen(), timer.GetSpellId());
+                break;
+            case MirrorTimer::STATUS_UPDATE:
+                if (!timer.IsActive())
+                    SendMirrorTimerStop(timer.GetType());
+                else
+                {
+                    // NOTE: Replaced with full resend due to clientside UI bug, details inside
+                    // SendMirrorTimerPause(timer.GetType(), timer.IsFrozen());
+                    SendMirrorTimerStart(timer.GetType(), timer.GetRemaining(), timer.GetDuration(), timer.GetScale(), timer.IsFrozen(), timer.GetSpellId());
+                }
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void Player::UpdateMirrorTimers(uint32 diff, bool send/* = true*/)
+{
+    for (auto& timer : m_mirrorTimers)
+    {
+        const MirrorTimer::Type type = timer.GetType();
+        const bool active = timer.IsActive();
+
+        if (active || CheckMirrorTimerActivation(type))
+        {
+            if (CheckMirrorTimerDeactivation(type))
+                 m_mirrorTimers[type].Stop();
+            else
+            {
+                if (active)
+                {
+                    if (timer.GetSpellId())
+                    {
+                        if (auto buff = GetMirrorTimerBuff(type))
+                            m_mirrorTimers[type].SetRemaining(uint32(std::abs(buff->GetAuraDuration())));
+                        else
+                            m_mirrorTimers[type].Stop();
+                    }
+
+                    if (!timer.Update(diff))
+                        OnMirrorTimerExpirationPulse(type);
+                }
+                else
+                {
+                    if (auto buff = GetMirrorTimerBuff(type))
+                        m_mirrorTimers[type].Start(uint32(std::abs(buff->GetAuraDuration())), uint32(std::abs(buff->GetAuraMaxDuration())), buff->GetId());
+                    else
+                        m_mirrorTimers[type].Start(GetMirrorTimerMaxDuration(type));
+                }
+            }
+        }
+    }
+
+    if (send)
+        SendMirrorTimers();
+}
+
+bool Player::CheckMirrorTimerActivation(MirrorTimer::Type timer) const
+{
+    switch (timer)
+    {
+        case MirrorTimer::FATIGUE:
+            return (IsInHighSea() && !IsTaxiFlying() && !GetTransport());
+        case MirrorTimer::BREATH:
+            return (IsUnderwater() && GetWaterBreathingInterval());
+        case MirrorTimer::FEIGNDEATH:
+            return (IsFeigningDeath());
+        case MirrorTimer::ENVIRONMENTAL:
+            return ((m_environmentFlags & ENVIRONMENT_MASK_LIQUID_HAZARD) && !(m_lastLiquid && m_lastLiquid->SpellId));
+        default:
+            return false;
+    }
+}
+
+bool Player::CheckMirrorTimerDeactivation(MirrorTimer::Type timer) const
+{
+    // Spirit of redemption: just drop all mirror timers at once
+    if (GetShapeshiftForm() == FORM_SPIRITOFREDEMPTION)
+        return true;
+
+    switch (timer)
+    {
+        case MirrorTimer::FATIGUE:
+            return (!(m_environmentFlags & ENVIRONMENT_FLAG_LIQUID) || (!isAlive() && !HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST)));
+        case MirrorTimer::BREATH:
+            return (!(m_environmentFlags & ENVIRONMENT_FLAG_LIQUID) || !isAlive());
+        case MirrorTimer::FEIGNDEATH:
+            return (!IsFeigningDeath());
+        case MirrorTimer::ENVIRONMENTAL:
+            return (!(m_environmentFlags & ENVIRONMENT_FLAG_LIQUID) || !isAlive());
+        default:
+            return false;
+    }
+}
+
+void Player::OnMirrorTimerExpirationPulse(MirrorTimer::Type timer)
+{
+    switch (timer)
+    {
+        case MirrorTimer::FATIGUE:
+            if (isAlive())                                      // Deal damage to living player
+                EnvironmentalDamage(DAMAGE_EXHAUSTED, ((GetMaxHealth() / 5) + urand(0, (getLevel() - 1))));
+            else if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST)) // Teleport ghost to graveyard
+                RepopAtGraveyard();
+            break;
+        case MirrorTimer::BREATH:
+            // TODO: Check this formula
+            EnvironmentalDamage(DAMAGE_DROWNING, ((GetMaxHealth() / 5) + urand(0, (getLevel() - 1))));
+            break;
+        case MirrorTimer::ENVIRONMENTAL:
+            // TODO: Check these formulas
+            if (IsInMagma())
+                EnvironmentalDamage(DAMAGE_LAVA, urand(600, 700));
+            // FIXME: Need to skip slime damage in Undercity, maybe someone can find better way to handle environmental damage
+            //if (IsInSlime() && m_zoneUpdateId != 1497)
+            //    EnvironmentalDamage(DAMAGE_SLIME, urand(600, 700));
+            break;
+        default:
+            return;
+    }
+}
+
+uint32 Player::GetMirrorTimerMaxDuration(MirrorTimer::Type timer) const
+{
+    switch (timer)
+    {
+        case MirrorTimer::FATIGUE:
+            return (sWorld.getConfig(CONFIG_UINT32_MIRRORTIMER_FATIGUE_MAX) * IN_MILLISECONDS);
+        case MirrorTimer::BREATH:
+            return GetWaterBreathingInterval();
+        case MirrorTimer::FEIGNDEATH:
+            return m_mirrorTimers[MirrorTimer::FEIGNDEATH].GetDuration();
+        case MirrorTimer::ENVIRONMENTAL:
+            return (sWorld.getConfig(CONFIG_UINT32_MIRRORTIMER_ENVIRONMENTAL_MAX) * IN_MILLISECONDS);
+        default:
+            return 0;
+    }
+}
+
+SpellAuraHolder const* Player::GetMirrorTimerBuff(MirrorTimer::Type timer) const
+{
+    switch (timer)
+    {
+        case MirrorTimer::FEIGNDEATH:
+        {
+            SpellAuraHolder const* buff = nullptr;
+            if (IsFeigningDeath())
+            {
+                for (auto aura : GetAurasByType(SPELL_AURA_FEIGN_DEATH))
+                {
+                    if (auto holder = aura->GetHolder())
+                    {
+                        if (!buff || holder->GetAuraMaxDuration() > buff->GetAuraMaxDuration())
+                            buff = holder;
+                    }
+                }
+            }
+            return buff;
+        }
+        default:
+            return nullptr;
+    }
+}
+
 void Player::Update(const uint32 diff)
 {
     if (!IsInWorld())
@@ -1150,6 +1373,8 @@ void Player::Update(const uint32 diff)
                 m_cinematicMgr.reset(nullptr);             // if any problem occur during cinematic update we can delete it
         }
     }
+
+    UpdateMirrorTimers(diff);
 
     // Used to implement delayed far teleports
     SetCanDelayTeleport(true);
@@ -1297,9 +1522,6 @@ void Player::Update(const uint32 diff)
             m_nextSave -= diff;
     }
 
-    // Handle Water/drowning
-    HandleDrowning(diff);
-
     // Handle detect stealth players
     if (m_DetectInvTimer > 0)
     {
@@ -1391,6 +1613,9 @@ void Player::SetDeathState(DeathState s)
 
         // FIXME: is pet dismissed at dying or releasing spirit? if second, add SetDeathState(DEAD) to HandleRepopRequestOpcode and define pet unsummon here with (s == DEAD)
         RemovePet(PET_SAVE_REAGENTS);
+
+        // Remove guardians (only players are supposed to have pets/guardians removed on death)
+        RemoveGuardians();
 
         // save value before aura remove in Unit::SetDeathState
         ressSpellId = GetUInt32Value(PLAYER_SELF_RES_SPELL);
@@ -2145,29 +2370,6 @@ GameObject* Player::GetGameObjectIfCanInteractWith(ObjectGuid guid, uint32 gameo
     return nullptr;
 }
 
-bool Player::IsUnderWater() const
-{
-    return GetTerrain()->IsUnderWater(GetPositionX(), GetPositionY(), GetPositionZ() + 2);
-}
-
-void Player::SetInWater(bool apply)
-{
-    if (m_isInWater == apply)
-        return;
-
-    // define player in water by opcodes
-    // move player's guid into HateOfflineList of those mobs
-    // which can't swim and move guid back into ThreatList when
-    // on surface.
-    // TODO: exist also swimming mobs, and function must be symmetric to enter/leave water
-    m_isInWater = apply;
-
-    // remove auras that need water/land
-    RemoveAurasWithInterruptFlags(apply ? AURA_INTERRUPT_FLAG_NOT_ABOVEWATER : AURA_INTERRUPT_FLAG_NOT_UNDERWATER);
-
-    getHostileRefManager().updateThreatTables();
-}
-
 struct SetGameMasterOnHelper
 {
     explicit SetGameMasterOnHelper() {}
@@ -2195,11 +2397,14 @@ void Player::SetGameMaster(bool on)
     {
         m_ExtraFlags |= PLAYER_EXTRA_GM_ON;
         setFaction(35);
+        SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNK_0);
         SetFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM);
         SetImmuneToNPC(true);
         SetImmuneToPlayer(true);
 
         CallForAllControlledUnits(SetGameMasterOnHelper(), CONTROLLED_PET | CONTROLLED_TOTEMS | CONTROLLED_GUARDIANS | CONTROLLED_CHARM);
+
+        FreezeMirrorTimers(true);
 
         SetPvPFreeForAll(false);
         UpdatePvPContested(false, true);
@@ -2210,11 +2415,14 @@ void Player::SetGameMaster(bool on)
     {
         m_ExtraFlags &= ~ PLAYER_EXTRA_GM_ON;
         setFactionForRace(getRace());
+        RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNK_0);
         RemoveFlag(PLAYER_FLAGS, PLAYER_FLAGS_GM);
         SetImmuneToNPC(false);
         SetImmuneToPlayer(false);
 
         CallForAllControlledUnits(SetGameMasterOffHelper(getFaction()), CONTROLLED_PET | CONTROLLED_TOTEMS | CONTROLLED_GUARDIANS | CONTROLLED_CHARM);
+
+        FreezeMirrorTimers(false);
 
         // restore FFA PvP Server state
         if (sWorld.IsFFAPvPRealm())
@@ -3066,51 +3274,8 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
         return false;
     }
 
-    // add dependent skills
-    if (SpellLearnSkillNode const* spellLearnSkill = sSpellMgr.GetSpellLearnSkill(spell_id))
-    {
-        uint16 value = std::max(spellLearnSkill->value, GetSkillValuePure(spellLearnSkill->skill));
-        uint16 max = std::max((!spellLearnSkill->maxvalue ? GetSkillMaxForLevel() : spellLearnSkill->maxvalue), GetSkillMaxPure(spellLearnSkill->skill));
-        SetSkill(spellLearnSkill->skill, value, max, spellLearnSkill->step);
-    }
-    else
-    {
-        // not ranked skills
-        SkillLineAbilityMapBounds skill_bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spell_id);
-
-        for (SkillLineAbilityMap::const_iterator _spell_idx = skill_bounds.first; _spell_idx != skill_bounds.second; ++_spell_idx)
-        {
-            SkillLineAbilityEntry const* skillAbility = _spell_idx->second;
-            SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skillAbility->skillId);
-            if (!pSkill)
-                continue;
-
-            if (HasSkill(uint16(pSkill->id)))
-                continue;
-
-            if (skillAbility->learnOnGetSkill == ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL ||
-                    // poison special case, not have ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL
-                    ((pSkill->id == SKILL_POISONS) && (skillAbility->max_value == 0)) ||
-                    // lockpicking special case, not have ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL
-                    ((pSkill->id == SKILL_LOCKPICKING) && (skillAbility->max_value == 0)))
-            {
-                switch (GetSkillRangeType(pSkill, skillAbility->racemask != 0))
-                {
-                    case SKILL_RANGE_LANGUAGE:
-                        SetSkill(uint16(pSkill->id), 300, 300);
-                        break;
-                    case SKILL_RANGE_LEVEL:
-                        SetSkill(uint16(pSkill->id), 1, GetSkillMaxForLevel());
-                        break;
-                    case SKILL_RANGE_MONO:
-                        SetSkill(uint16(pSkill->id), 1, 1);
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
-    }
+    // Add dependent skills
+    UpdateSpellTrainedSkills(spell_id, true);
 
     // learn dependent spells
     SpellLearnSpellMapBounds spell_bounds = sSpellMgr.GetSpellLearnSpellMapBounds(spell_id);
@@ -3206,7 +3371,7 @@ void Player::removeSpell(uint32 spell_id, bool disabled, bool learn_low_rank, bo
     SpellChainMapNext const& nextMap = sSpellMgr.GetSpellChainNext();
     for (SpellChainMapNext::const_iterator itr2 = nextMap.lower_bound(spell_id); itr2 != nextMap.upper_bound(spell_id); ++itr2)
         if (HasSpell(itr2->second) && !GetTalentSpellPos(itr2->second))
-            removeSpell(itr2->second, !IsPassiveSpell(itr2->second), false);
+            removeSpell(itr2->second, !IsPassiveSpell(itr2->second), false, sendUpdate);
 
     // re-search, it can be corrupted in prev loop
     itr = m_spells.find(spell_id);
@@ -3260,58 +3425,8 @@ void Player::removeSpell(uint32 spell_id, bool disabled, bool learn_low_rank, bo
             SetFreePrimaryProfessions(freeProfs);
     }
 
-    // remove dependent skill
-    if (SpellLearnSkillNode const* spellLearnSkill = sSpellMgr.GetSpellLearnSkill(spell_id))
-    {
-        uint32 prev_spell = sSpellMgr.GetPrevSpellInChain(spell_id);
-        if (!prev_spell)                                    // first rank, remove skill
-            SetSkill(spellLearnSkill->skill, 0, 0);
-        else
-        {
-            // search prev. skill setting by spell ranks chain
-            SpellLearnSkillNode const* prevSkill = sSpellMgr.GetSpellLearnSkill(prev_spell);
-            while (!prevSkill && prev_spell)
-            {
-                prev_spell = sSpellMgr.GetPrevSpellInChain(prev_spell);
-                prevSkill = sSpellMgr.GetSpellLearnSkill(sSpellMgr.GetFirstSpellInChain(prev_spell));
-            }
-
-            if (!prevSkill)                                 // not found prev skill setting, remove skill
-                SetSkill(spellLearnSkill->skill, 0, 0);
-            else                                            // set to prev. skill setting values
-            {
-                uint16 value = std::min(prevSkill->value, GetSkillValuePure(prevSkill->skill));
-                uint16 max = std::min((!prevSkill->maxvalue ? GetSkillMaxForLevel() : prevSkill->maxvalue), GetSkillMaxPure(prevSkill->skill));
-                SetSkill(prevSkill->skill, value, max, prevSkill->step);
-            }
-        }
-    }
-    else
-    {
-        // not ranked skills
-        SkillLineAbilityMapBounds bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spell_id);
-
-        for (SkillLineAbilityMap::const_iterator _spell_idx = bounds.first; _spell_idx != bounds.second; ++_spell_idx)
-        {
-            SkillLineAbilityEntry const* skillAbility = _spell_idx->second;
-            SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skillAbility->skillId);
-            if (!pSkill)
-                continue;
-
-            if ((skillAbility->learnOnGetSkill == ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL &&
-                    pSkill->categoryId != SKILL_CATEGORY_CLASS) ||// not unlearn class skills (spellbook/talent pages)
-                    // poisons/lockpicking special case, not have ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL
-                    ((pSkill->id == SKILL_POISONS || pSkill->id == SKILL_LOCKPICKING) && skillAbility->max_value == 0))
-            {
-                // not reset skills for professions and racial abilities
-                if ((pSkill->categoryId == SKILL_CATEGORY_SECONDARY || pSkill->categoryId == SKILL_CATEGORY_PROFESSION) &&
-                        (IsProfessionSkill(pSkill->id) || skillAbility->racemask != 0))
-                    continue;
-
-                SetSkill(uint16(pSkill->id), 0, 0);
-            }
-        }
-    }
+    // Remove dependent skills
+    UpdateSpellTrainedSkills(spell_id, false);
 
     // activate lesser rank in spellbook/action bar, and cast it if need
     bool prev_activate = false;
@@ -3391,7 +3506,7 @@ void Player::RemoveArenaSpellCooldowns()
 void Player::_LoadSpellCooldowns(QueryResult* result)
 {
     // some cooldowns can be already set at aura loading...
-    // QueryResult *result = CharacterDatabase.PQuery("SELECT SpellId, SpellExpireTime, Category, CategoryExpireTime, ItemId FROM character_spell_cooldown WHERE LowGuid = '%u'",GetGUIDLow());
+    // QueryResult *result = CharacterDatabase.PQuery("SELECT SpellId, SpellExpireTime, Category, CategoryExpireTime, ItemId FROM character_spell_cooldown WHERE guid = '%u'",GetGUIDLow());
 
     if (result)
     {
@@ -3460,7 +3575,7 @@ void Player::_SaveSpellCooldowns()
     static SqlStatementID deleteSpellCooldown;
 
     // delete all old cooldown
-    SqlStatement stmt = CharacterDatabase.CreateStatement(deleteSpellCooldown, "DELETE FROM character_spell_cooldown WHERE LowGuid = ?");
+    SqlStatement stmt = CharacterDatabase.CreateStatement(deleteSpellCooldown, "DELETE FROM character_spell_cooldown WHERE guid = ?");
     stmt.PExecute(GetGUIDLow());
 
     static SqlStatementID insertSpellCooldown;
@@ -3478,7 +3593,7 @@ void Player::_SaveSpellCooldowns()
             uint64 spellExpireTime = uint64(Clock::to_time_t(sTime));
             uint64 catExpireTime = uint64(Clock::to_time_t(cTime));
 
-            stmt = CharacterDatabase.CreateStatement(insertSpellCooldown, "INSERT INTO character_spell_cooldown (LowGuid, SpellId, SpellExpireTime, Category, CategoryExpireTime, ItemId) VALUES( ?, ?, ?, ?, ?, ?)");
+            stmt = CharacterDatabase.CreateStatement(insertSpellCooldown, "INSERT INTO character_spell_cooldown (guid, SpellId, SpellExpireTime, Category, CategoryExpireTime, ItemId) VALUES( ?, ?, ?, ?, ?, ?)");
             stmt.addUInt32(GetGUIDLow());
             stmt.addUInt32(cdData->GetSpellId());
             stmt.addUInt64(spellExpireTime);
@@ -4053,7 +4168,7 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
             CharacterDatabase.PExecute("DELETE FROM character_reputation WHERE guid = '%u'", lowguid);
             CharacterDatabase.PExecute("DELETE FROM character_skills WHERE guid = '%u'", lowguid);
             CharacterDatabase.PExecute("DELETE FROM character_spell WHERE guid = '%u'", lowguid);
-            CharacterDatabase.PExecute("DELETE FROM character_spell_cooldown WHERE LowGuid = '%u'", lowguid);
+            CharacterDatabase.PExecute("DELETE FROM character_spell_cooldown WHERE guid = '%u'", lowguid);
             CharacterDatabase.PExecute("DELETE FROM character_ticket WHERE guid = '%u'", lowguid);
             CharacterDatabase.PExecute("DELETE FROM item_instance WHERE owner_guid = '%u'", lowguid);
             CharacterDatabase.PExecute("DELETE FROM character_social WHERE guid = '%u' OR friend='%u'", lowguid, lowguid);
@@ -4220,7 +4335,7 @@ void Player::BuildPlayerRepop()
         CastSpell(this, 20584, TRIGGERED_OLD_TRIGGERED);                       // auras SPELL_AURA_INCREASE_SPEED(+speed in wisp form), SPELL_AURA_INCREASE_SWIM_SPEED(+swim speed in wisp form), SPELL_AURA_TRANSFORM (to wisp form)
     CastSpell(this, 8326, TRIGGERED_OLD_TRIGGERED);                            // auras SPELL_AURA_GHOST, SPELL_AURA_INCREASE_SPEED(why?), SPELL_AURA_INCREASE_SWIM_SPEED(why?)
 
-    // there must be SMSG.FORCE_RUN_SPEED_CHANGE, SMSG.FORCE_SWIM_SPEED_CHANGE, SMSG.MOVE_WATER_WALK
+    // there must be SMSG.FORCE_RUN_SPEED_CHANGE, SMSG.FORCE_SWIM_SPEED_CHANGE, SMSG.MOVE_WATER_WALK (inside ghost aura handler)
     // there must be SMSG.STOP_MIRROR_TIMER
     // there we must send 888 opcode
 
@@ -4243,7 +4358,6 @@ void Player::BuildPlayerRepop()
     // convert player body to ghost
     SetHealth(1);
 
-    SetWaterWalk(true);
     if (!GetSession()->isLogingOut())
         SetRoot(false);
 
@@ -4254,8 +4368,6 @@ void Player::BuildPlayerRepop()
 
     // to prevent cheating
     corpse->ResetGhostTime();
-
-    StopMirrorTimers();                                     // disable timers(bars)
 
     // set and clear other
     SetByteValue(UNIT_FIELD_BYTES_1, 3, UNIT_BYTE1_FLAG_ALWAYS_STAND);
@@ -4281,7 +4393,6 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
         RemoveAurasDueToSpell(20584);                       // speed bonuses
     RemoveAurasDueToSpell(8326);                            // SPELL_AURA_GHOST
 
-    SetWaterWalk(false);
     SetRoot(false);
 
     m_deathTimer = 0;
@@ -4298,7 +4409,7 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     // trigger update zone for alive state zone updates
     uint32 newzone, newarea;
     GetZoneAndAreaId(newzone, newarea);
-    UpdateZone(newzone, newarea);
+    UpdateZone(newzone, newarea, true); // must force zone script updates too to reapply auras
 
     // update visibility of world around viewpoint
     m_camera.UpdateVisibilityForOwner();
@@ -4340,8 +4451,6 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
 void Player::KillPlayer()
 {
     SetRoot(true);
-
-    StopMirrorTimers();                                     // disable timers(bars)
 
     SetDeathState(CORPSE);
     // SetFlag( UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_IN_PVP );
@@ -5118,13 +5227,12 @@ void Player::SetRegularAttackTime()
     }
 }
 
-// skill+step, checking for max value
-bool Player::UpdateSkill(uint32 skill_id, uint32 step)
+bool Player::UpdateSkill(uint16 id, uint16 diff)
 {
-    if (!skill_id)
+    if (!id)
         return false;
 
-    SkillStatusMap::iterator itr = mSkillStatus.find(skill_id);
+    SkillStatusMap::iterator itr = mSkillStatus.find(id);
     if (itr == mSkillStatus.end())
         return false;
 
@@ -5142,7 +5250,7 @@ bool Player::UpdateSkill(uint32 skill_id, uint32 step)
 
     if (value * 512 < max * urand(0, 512))
     {
-        uint32 new_value = value + step;
+        uint32 new_value = value + diff;
         if (new_value > max)
             new_value = max;
 
@@ -5246,7 +5354,7 @@ bool Player::UpdateFishingSkill()
     return UpdateSkillPro(SKILL_FISHING, chance * 10, gathering_skill_gain);
 }
 
-bool Player::UpdateSkillPro(uint16 SkillId, int32 Chance, uint32 step)
+bool Player::UpdateSkillPro(uint16 SkillId, int32 Chance, uint16 diff)
 {
     DEBUG_LOG("UpdateSkillPro(SkillId %d, Chance %3.1f%%)", SkillId, Chance / 10.0);
     if (!SkillId)
@@ -5279,7 +5387,7 @@ bool Player::UpdateSkillPro(uint16 SkillId, int32 Chance, uint32 step)
 
     if (Roll <= Chance)
     {
-        uint32 new_value = SkillValue + step;
+        uint32 new_value = SkillValue + diff;
         if (new_value > MaxValue)
             new_value = MaxValue;
 
@@ -5360,79 +5468,31 @@ void Player::UpdateCombatSkills(Unit* pVictim, WeaponAttackType attType, bool de
         return;
 }
 
-void Player::UpdateSkillsForLevel()
+SkillRaceClassInfoEntry const* Player::GetSkillInfo(uint16 id, std::function<bool (SkillRaceClassInfoEntry const&)> filterfunc/* = nullptr*/) const
 {
-    uint16 maxconfskill = sWorld.GetConfigMaxSkillValue();
-    uint32 maxSkill = GetSkillMaxForLevel();
+    if (!id)
+        return nullptr;
 
-    bool alwaysMaxSkill = sWorld.getConfig(CONFIG_BOOL_ALWAYS_MAX_SKILL_FOR_LEVEL);
+    uint32 raceMask = getRaceMask();
+    uint32 classMask = getClassMask();
 
-    for (auto& mSkillStatu : mSkillStatus)
+    auto bounds = sSpellMgr.GetSkillRaceClassInfoMapBounds(id);
+
+    for (auto itr = bounds.first; itr != bounds.second; ++itr)
     {
-        SkillStatusData& skillStatus = mSkillStatu.second;
-        if (skillStatus.uState == SKILL_DELETED)
+        SkillRaceClassInfoEntry const* entry = itr->second;
+
+        if (!(entry->raceMask & raceMask))
             continue;
 
-        uint32 pskill = mSkillStatu.first;
-
-        SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(pskill);
-        if (!pSkill)
+        if (!(entry->classMask & classMask))
             continue;
 
-        if (GetSkillRangeType(pSkill, false) != SKILL_RANGE_LEVEL)
-            continue;
-
-        uint32 valueIndex = PLAYER_SKILL_VALUE_INDEX(skillStatus.pos);
-        uint32 data = GetUInt32Value(valueIndex);
-        uint32 max = SKILL_MAX(data);
-        uint32 val = SKILL_VALUE(data);
-
-        /// update only level dependent max skill values
-        if (max != 1)
-        {
-            /// maximize skill always
-            if (alwaysMaxSkill)
-            {
-                SetUInt32Value(valueIndex, MAKE_SKILL_VALUE(maxSkill, maxSkill));
-                if (skillStatus.uState != SKILL_NEW)
-                    skillStatus.uState = SKILL_CHANGED;
-            }
-            else if (max != maxconfskill)                   /// update max skill value if current max skill not maximized
-            {
-                SetUInt32Value(valueIndex, MAKE_SKILL_VALUE(val, maxSkill));
-                if (skillStatus.uState != SKILL_NEW)
-                    skillStatus.uState = SKILL_CHANGED;
-            }
-        }
+        if (filterfunc == nullptr || filterfunc(*entry))
+            return entry;
     }
-}
 
-void Player::UpdateSkillsToMaxSkillsForLevel()
-{
-    for (auto& mSkillStatu : mSkillStatus)
-    {
-        SkillStatusData& skillStatus = mSkillStatu.second;
-        if (skillStatus.uState == SKILL_DELETED)
-            continue;
-
-        uint32 pskill = mSkillStatu.first;
-        if (IsProfessionOrRidingSkill(pskill))
-            continue;
-        uint32 valueIndex = PLAYER_SKILL_VALUE_INDEX(skillStatus.pos);
-        uint32 data = GetUInt32Value(valueIndex);
-
-        uint32 max = SKILL_MAX(data);
-
-        if (max > 1)
-        {
-            SetUInt32Value(valueIndex, MAKE_SKILL_VALUE(max, max));
-            if (skillStatus.uState != SKILL_NEW)
-                skillStatus.uState = SKILL_CHANGED;
-        }
-
-        if (pskill == SKILL_DEFENSE)
-            UpdateDefenseBonusesMod();
-    }
+    return nullptr;
 }
 
 bool Player::HasSkill(uint16 id) const
@@ -5446,91 +5506,103 @@ bool Player::HasSkill(uint16 id) const
 
 // This functions sets a skill line value (and adds if doesn't exist yet)
 // To "remove" a skill line, set it's values to zero
-void Player::SetSkill(uint16 id, uint16 currVal, uint16 maxVal, uint16 step /*=0*/)
+void Player::SetSkill(SkillStatusMap::iterator itr, uint16 value, uint16 max, uint16 step/* = 0*/)
+{
+    if (itr == mSkillStatus.end())
+        return;
+
+    const uint16 id = uint16(itr->first);
+    SkillStatusData& status = itr->second;
+
+    if (status.uState == SKILL_DELETED)
+        return;
+
+    if (value)  // Update
+    {
+        if (step)
+            SetUInt32Value(PLAYER_SKILL_INDEX(status.pos), MAKE_PAIR32(id, step));
+
+        SetUInt32Value(PLAYER_SKILL_VALUE_INDEX(status.pos), MAKE_SKILL_VALUE(value, max));
+
+        if (status.uState != SKILL_NEW)
+            status.uState = SKILL_CHANGED;
+    }
+    else        // Remove
+    {
+        SetUInt32Value(PLAYER_SKILL_INDEX(status.pos), 0);
+        SetUInt32Value(PLAYER_SKILL_VALUE_INDEX(status.pos), 0);
+        SetUInt32Value(PLAYER_SKILL_BONUS_INDEX(status.pos), 0);
+
+        if (status.uState == SKILL_NEW)
+            mSkillStatus.erase(itr);
+        else
+            status.uState = SKILL_DELETED;
+    }
+
+    // Learn/unlearn all spells auto-trained by this skill on change
+    UpdateSkillTrainedSpells(id, value);
+
+    // On updating specific skills values
+    switch (id)
+    {
+        case SKILL_DEFENSE:     UpdateDefenseBonusesMod();  break;
+    }
+}
+
+void Player::SetSkill(uint16 id, uint16 value, uint16 max, uint16 step/* = 0*/)
 {
     if (!id)
         return;
 
-    SkillStatusMap::iterator itr = mSkillStatus.find(id);
+    auto itr = mSkillStatus.find(id);
+    const bool exists = (itr != mSkillStatus.end());
 
-    // has skill
-    if (itr != mSkillStatus.end() && itr->second.uState != SKILL_DELETED)
+    if (exists && itr->second.uState != SKILL_DELETED)  // Update/remove existing
+        SetSkill(itr, value, max, step);
+    else if (value)                                     // Add new
     {
-        SkillStatusData& skillStatus = itr->second;
-        if (currVal)
+        if (!exists)
         {
-            if (step)                                      // need update step
-                SetUInt32Value(PLAYER_SKILL_INDEX(skillStatus.pos), MAKE_PAIR32(id, step));
-
-            // update value
-            SetUInt32Value(PLAYER_SKILL_VALUE_INDEX(skillStatus.pos), MAKE_SKILL_VALUE(currVal, maxVal));
-            if (skillStatus.uState != SKILL_NEW)
-                skillStatus.uState = SKILL_CHANGED;
-
-            // Learn all spells auto-trained by this skill on change
-            UpdateSkillSpellsTraining(id, currVal);
-        }
-        else                                                // remove
-        {
-            // clear skill fields
-            SetUInt32Value(PLAYER_SKILL_INDEX(skillStatus.pos), 0);
-            SetUInt32Value(PLAYER_SKILL_VALUE_INDEX(skillStatus.pos), 0);
-            SetUInt32Value(PLAYER_SKILL_BONUS_INDEX(skillStatus.pos), 0);
-
-            // mark as deleted or simply remove from map if not saved yet
-            if (skillStatus.uState != SKILL_NEW)
-                skillStatus.uState = SKILL_DELETED;
-            else
-                mSkillStatus.erase(itr);
-
-            // Remove all spells dependent on this skill unconditionally
-            UpdateSkillSpellsTraining(id, 0);
-        }
-    }
-    else if (currVal)                                       // add
-    {
-        for (int i = 0; i < PLAYER_MAX_SKILLS; ++i)
-        {
-            if (!GetUInt32Value(PLAYER_SKILL_INDEX(i)))
+            SkillLineEntry const* entry = sSkillLineStore.LookupEntry(id);
+            if (!entry)
             {
-                SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(id);
-                if (!pSkill)
-                {
-                    sLog.outError("Skill not found in SkillLineStore: skill #%u", id);
-                    return;
-                }
-
-                SetUInt32Value(PLAYER_SKILL_INDEX(i), MAKE_PAIR32(id, step));
-                SetUInt32Value(PLAYER_SKILL_VALUE_INDEX(i), MAKE_SKILL_VALUE(currVal, maxVal));
-
-                // insert new entry or update if not deleted old entry yet
-                if (itr != mSkillStatus.end())
-                {
-                    itr->second.pos = i;
-                    itr->second.uState = SKILL_CHANGED;
-                }
-                else
-                    mSkillStatus.insert(SkillStatusMap::value_type(id, SkillStatusData(i, SKILL_NEW)));
-
-                // apply skill bonuses
-                SetUInt32Value(PLAYER_SKILL_BONUS_INDEX(i), 0);
-
-                // temporary bonuses
-                AuraList const& mModSkill = GetAurasByType(SPELL_AURA_MOD_SKILL);
-                for (auto j : mModSkill)
-                    if (j->GetModifier()->m_miscvalue == int32(id))
-                        j->ApplyModifier(true);
-
-                // permanent bonuses
-                AuraList const& mModSkillTalent = GetAurasByType(SPELL_AURA_MOD_SKILL_TALENT);
-                for (auto j : mModSkillTalent)
-                    if (j->GetModifier()->m_miscvalue == int32(id))
-                        j->ApplyModifier(true);
-
-                // Learn all spells auto-trained by this skill
-                UpdateSkillSpellsTraining(id, currVal);
+                sLog.outError("Skill not found in SkillLineStore: skill #%u", id);
                 return;
             }
+        }
+
+        for (uint8 pos = 0; pos < PLAYER_MAX_SKILLS; ++pos)
+        {
+            if (GetUInt32Value(PLAYER_SKILL_INDEX(pos)))
+                continue;
+
+            if (exists) // Re-use and move data for old status entry if not deleted yet
+            {
+                itr->second.pos = pos;
+                itr->second.uState = SKILL_CHANGED;
+            }
+            else        // Add a completely new status entry
+            {
+                auto result = mSkillStatus.insert(SkillStatusMap::value_type(id, SkillStatusData(pos, SKILL_NEW)));
+
+                if (!result.second) // Insert failed
+                    return;
+
+                itr = result.first;
+            }
+
+            SetUInt32Value(PLAYER_SKILL_INDEX(pos), MAKE_PAIR32(id, step));         // Set/reset skill id and step
+            SetSkill(itr, value, max);                                              // Set current and max values
+            SetUInt32Value(PLAYER_SKILL_BONUS_INDEX(pos), 0);                       // Reset bonus data
+            for (auto type : { SPELL_AURA_MOD_SKILL, SPELL_AURA_MOD_SKILL_TALENT }) // Set temporary, permanent bonuses
+            {
+                for (auto aura : GetAurasByType(type))
+                {
+                    if (aura->GetModifier()->m_miscvalue == int32(id))
+                        aura->ApplyModifier(true);
+                }
+            }
+            break;
         }
     }
 }
@@ -5566,6 +5638,60 @@ uint16 Player::GetSkill(uint16 id, bool bonusPerm, bool bonusTemp, bool max/* = 
     return uint16(std::max(0, value));
 }
 
+void Player::SetSkillStep(uint16 id, uint16 step)
+{
+    if (!id || step > MAX_SKILL_STEP)
+        return;
+
+    if (step)   // Set step
+    {
+        uint16 val = 0;
+        uint16 max = 0;
+
+        auto filterfunc = [&] (SkillRaceClassInfoEntry const& entry)
+        {
+            if (entry.skillTierId)
+            {
+                if (SkillTiersEntry const* steps = sSkillTiersStore.LookupEntry(entry.skillTierId))
+                {
+                    val = uint16(steps->skillValue[(step - 1)]);
+                    max = uint16(steps->maxSkillValue[(step - 1)]);
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        bool maxed = false;
+
+        if (SkillRaceClassInfoEntry const* entry = GetSkillInfo(id, filterfunc))
+            maxed = (entry->flags & SKILL_FLAG_MAXIMIZED);
+
+        if (max)
+        {
+            // Note: Some SkillTiers entries contain 0 as starting value for first step, needs investigation (sanitized for now)
+            const uint16 value = std::max(uint16(1), uint16(maxed ? max : GetSkillValuePure(id)));
+            SetSkill(id, value, max, step);
+        }
+    }
+    else        // Unlearn
+        SetSkill(id, 0, 0);
+}
+
+uint16 Player::GetSkillStep(uint16 id) const
+{
+    if (!id)
+        return 0;
+
+    SkillStatusMap::const_iterator itr = mSkillStatus.find(id);
+    if (itr == mSkillStatus.end() || itr->second.uState == SKILL_DELETED)
+        return 0;
+
+    SkillStatusData const& skillStatus = itr->second;
+
+    return PAIR32_HIPART(GetUInt32Value(PLAYER_SKILL_INDEX(skillStatus.pos)));
+}
+
 bool Player::ModifySkillBonus(uint16 id, int16 diff, bool permanent/* = false*/)
 {
     if (!id || !diff)
@@ -5584,6 +5710,12 @@ bool Player::ModifySkillBonus(uint16 id, int16 diff, bool permanent/* = false*/)
         SetUInt32Value(bonusIndex, MAKE_SKILL_BONUS(bonusTemporary, (bonusPermanent + diff))); // permanent bonus stored in high part
     else
         SetUInt32Value(bonusIndex, MAKE_SKILL_BONUS((bonusTemporary + diff), bonusPermanent)); // temporary/item bonus stored in low part
+
+    // On updating specific skills values
+    switch (id)
+    {
+        case SKILL_DEFENSE:     UpdateDefenseBonusesMod();  break;
+    }
 
     return true;
 }
@@ -5604,7 +5736,53 @@ int16 Player::GetSkillBonus(uint16 id, bool permanent/*= false*/) const
     return (permanent ? SKILL_PERM_BONUS(bonus) : SKILL_TEMP_BONUS(bonus));
 }
 
-void Player::UpdateSkillSpellsTraining(uint16 id, uint16 currVal)
+void Player::UpdateSkillsForLevel(bool maximize/* = false*/)
+{
+    if (!maximize)
+        maximize = sWorld.getConfig(CONFIG_BOOL_ALWAYS_MAX_SKILL_FOR_LEVEL);
+
+    const uint16 maxPeronal = GetSkillMaxForLevel();
+    const uint16 maxGlobal = sWorld.GetConfigMaxSkillValue();
+    const uint16 maxNew = std::min(maxPeronal, maxGlobal);
+
+    for (auto& pair : mSkillStatus)
+    {
+        SkillStatusData& skillStatus = pair.second;
+        if (skillStatus.uState == SKILL_DELETED)
+            continue;
+
+        uint16 skillId = uint16(pair.first);
+
+        SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skillId);
+        if (!pSkill)
+            continue;
+
+        if (GetSkillRangeType(pSkill, false) != SKILL_RANGE_LEVEL)
+            continue;
+
+        bool maxed = maximize;
+
+        if (!maxed)
+        {
+            if (SkillRaceClassInfoEntry const* entry = GetSkillInfo(skillId))
+                maxed = (entry->flags & SKILL_FLAG_MAXIMIZED);
+        }
+
+        const uint32 data = GetUInt32Value(PLAYER_SKILL_VALUE_INDEX(skillStatus.pos));
+        const uint16 max = SKILL_MAX(data);
+
+        if (max != 1)
+        {
+            const uint16 val = SKILL_VALUE(data);
+            const uint16 valNew = (maxed ? maxNew : val);
+
+            if (maxNew != max || valNew != val)
+                SetSkill(skillId, valNew, maxNew);
+        }
+    }
+}
+
+void Player::UpdateSkillTrainedSpells(uint16 id, uint16 currVal)
 {
     uint32 raceMask  = getRaceMask();
     uint32 classMask = getClassMask();
@@ -5618,7 +5796,7 @@ void Player::UpdateSkillSpellsTraining(uint16 id, uint16 currVal)
             // Update training: skill removal mode, wipe all dependent spells regardless of training method
             if (!currVal)
             {
-                removeSpell(pAbility->spellId);
+                removeSpell(pAbility->spellId, false, false, false);
                 continue;
             }
 
@@ -5643,6 +5821,156 @@ void Player::UpdateSkillSpellsTraining(uint16 id, uint16 currVal)
             else
                 learnSpell(pAbility->spellId, true);
         }
+    }
+}
+
+void Player::UpdateSpellTrainedSkills(uint32 spellId, bool apply)
+{
+    if (SpellLearnSkillNode const* skillLearnInfo = sSpellMgr.GetSpellLearnSkill(spellId))
+    {
+        // Specifically defined: no checks needed
+        if (apply)
+            SetSkillStep(skillLearnInfo->skill, skillLearnInfo->step);
+        else if (HasSkill(skillLearnInfo->skill))
+            SetSkillStep(skillLearnInfo->skill, (skillLearnInfo->step ? (skillLearnInfo->step - 1) : 0));
+    }
+    else
+    {
+        // Detect obtained child spells of specific skills
+        auto bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spellId);
+
+        for (auto itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            SkillLineAbilityEntry const* info = itr->second;
+
+            SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(info->skillId);
+            if (!pSkill)
+                continue;
+
+            const uint16 skillId = uint16(pSkill->id);
+
+            switch (skillId)            // Legacy workarounds:
+            {
+                case SKILL_POISONS:     // Poisons/lockpicking special case: no ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL
+                case SKILL_LOCKPICKING:
+                    if (info->max_value)
+                        continue;
+                    break;
+                default:                // Spells obtained via ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL only
+                    if (info->learnOnGetSkill != ABILITY_LEARNED_ON_GET_RACE_OR_CLASS_SKILL)
+                        continue;
+            }
+
+            if (apply)
+            {
+                if (HasSkill(skillId))
+                    continue;
+
+                // Check if obtainable
+                if (!GetSkillInfo(skillId, ([] (SkillRaceClassInfoEntry const& entry) { return !(entry.flags & SKILL_FLAG_NOT_TRAINABLE); })))
+                    continue;
+
+                switch (GetSkillRangeType(pSkill, info->racemask != 0))
+                {
+                    case SKILL_RANGE_LANGUAGE:
+                        SetSkill(skillId, 300, 300);
+                        break;
+                    case SKILL_RANGE_LEVEL:
+                        SetSkill(skillId, 1, GetSkillMaxForLevel());
+                        break;
+                    case SKILL_RANGE_MONO:
+                        SetSkill(skillId, 1, 1);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            else
+            {
+                switch (pSkill->categoryId)         // Legacy workarounds:
+                {
+                    case SKILL_CATEGORY_CLASS:      // not unlearn class skills (spellbook/talent pages)
+                        continue;
+                    case SKILL_CATEGORY_SECONDARY:  // not reset skills for professions and racial abilities
+                    case SKILL_CATEGORY_PROFESSION:
+                        if (IsProfessionSkill(skillId) || info->racemask != 0)
+                            continue;
+                        SetSkill(skillId, 0, 0);
+                        break;
+
+                    default:
+                        SetSkill(skillId, 0, 0);
+                }
+            }
+        }
+    }
+}
+
+void Player::LearnDefaultSkills()
+{
+    // learn default race/class skills
+    PlayerInfo const* info = sObjectMgr.GetPlayerInfo(getRace(), getClass());
+
+    for (auto tskill : info->skill)
+    {
+        if (HasSkill(tskill.SkillId))
+            continue;
+
+        DEBUG_LOG("PLAYER (Class: %u Race: %u): Adding initial skill, id = %u", uint32(getClass()), uint32(getRace()), uint32(tskill.SkillId));
+
+        uint16 value = 0;
+        uint16 max = 0;
+        uint16 step = 0;
+
+        if (SkillLineEntry const* entry = sSkillLineStore.LookupEntry(tskill.SkillId))
+        {
+            switch (GetSkillRangeType(entry, false))
+            {
+                case SKILL_RANGE_LANGUAGE:
+                    value = max = 300;
+                    break;
+                case SKILL_RANGE_MONO:
+                    value = max = 1;
+                    break;
+                case SKILL_RANGE_LEVEL:
+                    value = 1;
+                    max = GetSkillMaxForLevel();
+                    break;
+                case SKILL_RANGE_RANK:
+                {
+                    const bool predefined = (tskill.Step != 0);
+                    step = (predefined ? tskill.Step : 1);
+                    uint32 stepIndex = (step - 1);
+
+                    auto filterfunc = [&] (SkillRaceClassInfoEntry const& entry)
+                    {
+                        if (entry.skillTierId)
+                        {
+                            if (SkillTiersEntry const* steps = sSkillTiersStore.LookupEntry(entry.skillTierId))
+                            {
+                                value = 1;
+                                max = uint16(steps->maxSkillValue[stepIndex]);
+
+                                if (entry.flags & SKILL_FLAG_MAXIMIZED)
+                                    value = max;
+                                else if (predefined)
+                                    value = std::max(uint16(1), uint16((getLevel() - 1) * 5));
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+
+                    if (!GetSkillInfo(tskill.SkillId, filterfunc))
+                        continue;
+
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        SetSkill(tskill.SkillId, value, max, step);
     }
 }
 
@@ -5823,7 +6151,7 @@ bool Player::SetPosition(float x, float y, float z, float orientation, bool tele
     m_positionStatusUpdateTimer = 100;
 
     // code block for underwater state update
-    UpdateUnderwaterState(m, x, y, z);
+    UpdateTerainEnvironmentFlags(m, x, y, z);
 
     // code block for outdoor state and area-explore check
     CheckAreaExploreAndOutdoor();
@@ -6043,23 +6371,31 @@ int32 Player::CalculateReputationGain(ReputationSource source, int32 rep, int32 
 
     percent += rep > 0 ? repMod : -repMod;
 
-    float rate;
+    float minRate;
     switch (source)
     {
         case REPUTATION_SOURCE_KILL:
-            rate = sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL);
+            minRate = sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_KILL);
             break;
         case REPUTATION_SOURCE_QUEST:
-            rate = sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_QUEST);
+            minRate = sWorld.getConfig(CONFIG_FLOAT_RATE_REPUTATION_LOWLEVEL_QUEST);
             break;
-        case REPUTATION_SOURCE_SPELL:
         default:
-            rate = 1.0f;
+            minRate = 1.0f;
             break;
     }
 
-    if (rate != 1.0f && creatureOrQuestLevel <= MaNGOS::XP::GetGrayLevel(getLevel()))
-        percent *= rate;
+    uint32 currentLevel = getLevel();
+    if (creatureOrQuestLevel <= MaNGOS::XP::GetGrayLevel(currentLevel))
+        percent *= minRate;
+    else
+    {
+        // Pre-3.0.8: Declines with 20% for each level if 6 levels or more below the player down to a minimum (default: 20%)
+        const uint32 treshold = (creatureOrQuestLevel + 5);
+
+        if (currentLevel > treshold)
+            percent *= std::max(minRate, (1.0f - (0.2f * (currentLevel - treshold))));
+    }
 
     if (percent <= 0.0f)
         return 0;
@@ -6497,13 +6833,13 @@ bool Player::CanUseCapturePoint() const
            !isGameMaster();
 }
 
-void Player::UpdateZone(uint32 newZone, uint32 newArea)
+void Player::UpdateZone(uint32 newZone, uint32 newArea, bool force)
 {
     AreaTableEntry const* zone = GetAreaEntryByAreaID(newZone);
     if (!zone)
         return;
 
-    if (m_zoneUpdateId != newZone)
+    if (m_zoneUpdateId != newZone || force)
     {
         // handle outdoor pvp zones
         sOutdoorPvPMgr.HandlePlayerLeaveZone(this, m_zoneUpdateId);
@@ -6518,9 +6854,9 @@ void Player::UpdateZone(uint32 newZone, uint32 newArea)
         }
     }
 
-    if (m_areaUpdateId != newArea)
+    if (m_areaUpdateId != newArea || force)
     {
-        SendInitWorldStates(newZone, newArea);              // only if really enters to new zone, not just area change, works strange...
+        SendInitWorldStates(newZone, newArea); // only if really enters to new zone, not just area change, works strange...
 
         sWorldState.HandlePlayerLeaveArea(this, m_areaUpdateId);
         sWorldState.HandlePlayerEnterArea(this, newArea);
@@ -14712,10 +15048,18 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     if (HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
         m_deathState = DEAD;
 
+    // train spells by loaded skills
+    for (auto itr = mSkillStatus.begin(); itr != mSkillStatus.end(); ++itr)
+    {
+        if (itr->second.uState != SKILL_DELETED)
+            UpdateSkillTrainedSpells(uint16(itr->first), SKILL_VALUE(GetUInt32Value(PLAYER_SKILL_VALUE_INDEX(itr->second.pos))));
+    }
+
     _LoadSpells(holder->GetResult(PLAYER_LOGIN_QUERY_LOADSPELLS));
 
     // after spell load
     InitTalentForLevel();
+    LearnDefaultSkills();
     learnDefaultSpells();
 
     // after spell load, learn rewarded spell if need also
@@ -16682,7 +17026,7 @@ void Player::_SaveStats()
         stmt.addFloat(GetStat(Stats(i)));
     // armor + school resistances
     for (int i = 0; i < MAX_SPELL_SCHOOL; ++i)
-        stmt.addUInt32(GetResistance(SpellSchools(i)));
+        stmt.addInt32(GetResistance(SpellSchools(i)));
     stmt.addFloat(GetFloatValue(PLAYER_BLOCK_PERCENTAGE));
     stmt.addFloat(GetFloatValue(PLAYER_DODGE_PERCENTAGE));
     stmt.addFloat(GetFloatValue(PLAYER_PARRY_PERCENTAGE));
@@ -16706,10 +17050,10 @@ void Player::outDebugStatsValues() const
     sLog.outDebug("AGILITY is: \t\t%f\t\tSTRENGTH is: \t\t%f", GetStat(STAT_AGILITY), GetStat(STAT_STRENGTH));
     sLog.outDebug("INTELLECT is: \t\t%f\t\tSPIRIT is: \t\t%f", GetStat(STAT_INTELLECT), GetStat(STAT_SPIRIT));
     sLog.outDebug("STAMINA is: \t\t%f", GetStat(STAT_STAMINA));
-    sLog.outDebug("Armor is: \t\t%u\t\tBlock is: \t\t%f", GetArmor(), GetFloatValue(PLAYER_BLOCK_PERCENTAGE));
-    sLog.outDebug("HolyRes is: \t\t%u\t\tFireRes is: \t\t%u", GetResistance(SPELL_SCHOOL_HOLY), GetResistance(SPELL_SCHOOL_FIRE));
-    sLog.outDebug("NatureRes is: \t\t%u\t\tFrostRes is: \t\t%u", GetResistance(SPELL_SCHOOL_NATURE), GetResistance(SPELL_SCHOOL_FROST));
-    sLog.outDebug("ShadowRes is: \t\t%u\t\tArcaneRes is: \t\t%u", GetResistance(SPELL_SCHOOL_SHADOW), GetResistance(SPELL_SCHOOL_ARCANE));
+    sLog.outDebug("Armor is: \t\t%i\t\tBlock is: \t\t%f", GetArmor(), GetFloatValue(PLAYER_BLOCK_PERCENTAGE));
+    sLog.outDebug("HolyRes is: \t\t%i\t\tFireRes is: \t\t%i", GetResistance(SPELL_SCHOOL_HOLY), GetResistance(SPELL_SCHOOL_FIRE));
+    sLog.outDebug("NatureRes is: \t\t%i\t\tFrostRes is: \t\t%i", GetResistance(SPELL_SCHOOL_NATURE), GetResistance(SPELL_SCHOOL_FROST));
+    sLog.outDebug("ShadowRes is: \t\t%i\t\tArcaneRes is: \t\t%i", GetResistance(SPELL_SCHOOL_SHADOW), GetResistance(SPELL_SCHOOL_ARCANE));
     sLog.outDebug("MIN_DAMAGE is: \t\t%f\tMAX_DAMAGE is: \t\t%f", GetFloatValue(UNIT_FIELD_MINDAMAGE), GetFloatValue(UNIT_FIELD_MAXDAMAGE));
     sLog.outDebug("MIN_OFFHAND_DAMAGE is: \t%f\tMAX_OFFHAND_DAMAGE is: \t%f", GetFloatValue(UNIT_FIELD_MINOFFHANDDAMAGE), GetFloatValue(UNIT_FIELD_MAXOFFHANDDAMAGE));
     sLog.outDebug("MIN_RANGED_DAMAGE is: \t%f\tMAX_RANGED_DAMAGE is: \t%f", GetFloatValue(UNIT_FIELD_MINRANGEDDAMAGE), GetFloatValue(UNIT_FIELD_MAXRANGEDDAMAGE));
@@ -18825,10 +19169,6 @@ void Player::SendInitialPacketsBeforeAddToMap()
     data << (float)0.01666667f;                             // game speed
     GetSession()->SendPacket(data);
 
-    // set fly flag if in fly form or taxi flight to prevent visually drop at ground in showup moment
-    if (IsFreeFlying() || IsTaxiFlying())
-        m_movementInfo.AddMovementFlag(MOVEFLAG_FLYING);
-
     if(!GetSession()->PlayerLoading())
         SetMover(this);
 }
@@ -18850,8 +19190,9 @@ void Player::SendInitialPacketsAfterAddToMap()
     // same auras state lost at far teleport, send it one more time in this case also
     static const AuraType auratypes[] =
     {
-        SPELL_AURA_MOD_FEAR,     SPELL_AURA_TRANSFORM,                 SPELL_AURA_WATER_WALK,
+        SPELL_AURA_GHOST,        SPELL_AURA_TRANSFORM,                 SPELL_AURA_WATER_WALK,
         SPELL_AURA_FEATHER_FALL, SPELL_AURA_HOVER,                     SPELL_AURA_SAFE_FALL,
+        SPELL_AURA_MOD_STUN,     SPELL_AURA_MOD_ROOT,                  SPELL_AURA_MOD_FEAR,
         SPELL_AURA_FLY,          SPELL_AURA_MOD_FLIGHT_SPEED_MOUNTED,  SPELL_AURA_NONE
     };
     for (AuraType const* itr = &auratypes[0]; itr && itr[0] != SPELL_AURA_NONE; ++itr)
@@ -18860,12 +19201,6 @@ void Player::SendInitialPacketsAfterAddToMap()
         if (!auraList.empty())
             auraList.front()->ApplyModifier(true, true);
     }
-
-    if (HasAuraType(SPELL_AURA_MOD_STUN) || HasAuraType(SPELL_AURA_MOD_ROOT))
-        SetRoot(true);
-
-    if (HasAuraType(SPELL_AURA_GHOST) || HasAuraType(SPELL_AURA_WATER_WALK))
-        SetWaterWalk(true);
 
     SendEnchantmentDurations();                             // must be after add to map
     SendItemDurations();                                    // must be after add to map
@@ -19026,6 +19361,7 @@ void Player::resetSpells()
     for (PlayerSpellMap::const_iterator iter = smap.begin(); iter != smap.end(); ++iter)
         removeSpell(iter->first, false, false);             // only iter->first can be accessed, object by iter->second can be deleted already
 
+    LearnDefaultSkills();
     learnDefaultSpells();
     learnQuestRewardedSpells();
 }
@@ -19034,6 +19370,7 @@ void Player::learnDefaultSpells()
 {
     // learn default race/class spells
     PlayerInfo const* info = sObjectMgr.GetPlayerInfo(getRace(), getClass());
+
     for (uint32 tspell : info->spell)
     {
         DEBUG_LOG("PLAYER (Class: %u Race: %u): Adding initial spell, id = %u", uint32(getClass()), uint32(getRace()), tspell);
@@ -19314,7 +19651,7 @@ bool Player::IsSpellFitByClassAndRace(uint32 spell_id, uint32* pReqlevel /*= nul
             SkillRaceClassInfoEntry const* skillRCEntry = itr->second;
             if ((skillRCEntry->raceMask & racemask) && (skillRCEntry->classMask & classmask))
             {
-                if (skillRCEntry->flags & ABILITY_SKILL_NONTRAINABLE)
+                if (skillRCEntry->flags & SKILL_FLAG_NOT_TRAINABLE)
                     return false;
 
                 if (pReqlevel)                              // show trainers list case
@@ -20046,18 +20383,21 @@ void Player::SetOriginalGroup(Group* group, int8 subgroup)
     }
 }
 
-void Player::UpdateUnderwaterState(Map* m, float x, float y, float z)
+void Player::UpdateTerainEnvironmentFlags(Map* m, float x, float y, float z)
 {
     GridMapLiquidData liquid_status;
     GridMapLiquidStatus res = m->GetTerrain()->getLiquidStatus(x, y, z, MAP_ALL_LIQUIDS, &liquid_status);
     if (!res)
     {
-        m_MirrorTimerFlags &= ~(UNDERWATER_INWATER | UNDERWATER_INLAVA | UNDERWATER_INSLIME | UNDERWATER_INDARKWATER);
+        SetEnvironmentFlags(ENVIRONMENT_MASK_LIQUID_FLAGS, false);
         if (m_lastLiquid && m_lastLiquid->SpellId)
             RemoveAurasDueToSpell(m_lastLiquid->SpellId == 37025 ? 37284 : m_lastLiquid->SpellId);
         m_lastLiquid = nullptr;
         return;
     }
+
+    // Environment has liquid information
+    SetEnvironmentFlags(ENVIRONMENT_FLAG_LIQUID, true);
 
     if (uint32 liqEntry = liquid_status.entry)
     {
@@ -20108,37 +20448,24 @@ void Player::UpdateUnderwaterState(Map* m, float x, float y, float z)
         m_lastLiquid = nullptr;
     }
 
-    // All liquids type - check under water position
+    // All liquid types: check under surface level
     if (liquid_status.type_flags & (MAP_LIQUID_TYPE_WATER | MAP_LIQUID_TYPE_OCEAN | MAP_LIQUID_TYPE_MAGMA | MAP_LIQUID_TYPE_SLIME))
-    {
-        if (res & LIQUID_MAP_UNDER_WATER)
-            m_MirrorTimerFlags |= UNDERWATER_INWATER;
-        else
-            m_MirrorTimerFlags &= ~UNDERWATER_INWATER;
-    }
+        SetEnvironmentFlags(ENVIRONMENT_FLAG_UNDERWATER, (res & LIQUID_MAP_UNDER_WATER));
 
-    // Allow travel in dark water on taxi or transport
-    if ((liquid_status.type_flags & MAP_LIQUID_TYPE_DARK_WATER) && !IsTaxiFlying() && !GetTransport())
-        m_MirrorTimerFlags |= UNDERWATER_INDARKWATER;
-    else
-        m_MirrorTimerFlags &= ~UNDERWATER_INDARKWATER;
+    // In water: on or under surface level
+    if (liquid_status.type_flags & MAP_LIQUID_TYPE_WATER)
+        SetEnvironmentFlags(ENVIRONMENT_FLAG_IN_WATER, (res & (LIQUID_MAP_UNDER_WATER | LIQUID_MAP_IN_WATER)));
 
-    // in lava check, anywhere in lava level
+    // In magma: on, under, or slightly above surface level
     if (liquid_status.type_flags & MAP_LIQUID_TYPE_MAGMA)
-    {
-        if (res & (LIQUID_MAP_UNDER_WATER | LIQUID_MAP_IN_WATER | LIQUID_MAP_WATER_WALK))
-            m_MirrorTimerFlags |= UNDERWATER_INLAVA;
-        else
-            m_MirrorTimerFlags &= ~UNDERWATER_INLAVA;
-    }
-    // in slime check, anywhere in slime level
+        SetEnvironmentFlags(ENVIRONMENT_FLAG_IN_MAGMA, (res & (LIQUID_MAP_UNDER_WATER | LIQUID_MAP_IN_WATER | LIQUID_MAP_WATER_WALK)));
+
+    // In slime: on, under, or slightly above surface level
     if (liquid_status.type_flags & MAP_LIQUID_TYPE_SLIME)
-    {
-        if (res & (LIQUID_MAP_UNDER_WATER | LIQUID_MAP_IN_WATER | LIQUID_MAP_WATER_WALK))
-            m_MirrorTimerFlags |= UNDERWATER_INSLIME;
-        else
-            m_MirrorTimerFlags &= ~UNDERWATER_INSLIME;
-    }
+        SetEnvironmentFlags(ENVIRONMENT_FLAG_IN_SLIME, (res & (LIQUID_MAP_UNDER_WATER | LIQUID_MAP_IN_WATER | LIQUID_MAP_WATER_WALK)));
+
+    // In deep water: on, under, above surface level
+    SetEnvironmentFlags(ENVIRONMENT_FLAG_HIGH_SEA, (liquid_status.type_flags & MAP_LIQUID_TYPE_DEEP_WATER));
 }
 
 bool ItemPosCount::isContainedIn(ItemPosCountVec const& vec) const
@@ -20343,6 +20670,9 @@ void Player::_LoadSkills(QueryResult* result)
                 case SKILL_RANGE_MONO:                      // 1..1, grey monolite bar
                     value = max = 1;
                     break;
+                case SKILL_RANGE_LEVEL:
+                    max = GetSkillMaxForLevel();
+                    break;
                 default:
                     break;
             }
@@ -20354,13 +20684,39 @@ void Player::_LoadSkills(QueryResult* result)
                 continue;
             }
 
-            SetUInt32Value(PLAYER_SKILL_INDEX(count), MAKE_PAIR32(skill, 0));
+            // Deduct current skill step from skill max value using data from dbc
+            // TODO: Maybe save step to db in the future?
+            uint16 step = 0;
+
+            uint32 raceMask = getRaceMask();
+            uint32 classMask = getClassMask();
+            auto bounds = sSpellMgr.GetSkillRaceClassInfoMapBounds(skill);
+
+            for (auto itr = bounds.first; (itr != bounds.second && !step); ++itr)
+            {
+                SkillRaceClassInfoEntry const* entry = itr->second;
+
+                if (!(entry->raceMask & raceMask))
+                    continue;
+
+                if (!(entry->classMask & classMask))
+                    continue;
+
+                if (SkillTiersEntry const* steps = sSkillTiersStore.LookupEntry(entry->skillTierId))
+                {
+                    for (uint16 i = 0; (i < MAX_SKILL_STEP && !step && steps->maxSkillValue[i]); ++i)
+                    {
+                        if (steps->maxSkillValue[i] == max)
+                            step = i + 1;
+                    }
+                }
+            }
+
+            SetUInt32Value(PLAYER_SKILL_INDEX(count), MAKE_PAIR32(skill, step));
             SetUInt32Value(PLAYER_SKILL_VALUE_INDEX(count), MAKE_SKILL_VALUE(value, max));
             SetUInt32Value(PLAYER_SKILL_BONUS_INDEX(count), 0);
 
             mSkillStatus.insert(SkillStatusMap::value_type(skill, SkillStatusData(count, SKILL_UNCHANGED)));
-
-            UpdateSkillSpellsTraining(skill, value);
 
             ++count;
 

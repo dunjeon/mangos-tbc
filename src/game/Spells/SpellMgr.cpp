@@ -1885,15 +1885,14 @@ void SpellMgr::LoadSpellLearnSkills()
                 SpellLearnSkillNode dbc_node;
                 dbc_node.skill    = entry->EffectMiscValue[i];
                 dbc_node.step     = entry->CalculateSimpleValue(SpellEffectIndex(i));
-                if (dbc_node.skill != SKILL_RIDING)
-                    dbc_node.value = 1;
-                else
-                    dbc_node.value = dbc_node.step * 75;
-                dbc_node.maxvalue = dbc_node.step * 75;
+                dbc_node.effect   = SpellEffects(entry->Effect[i]);
 
-                mSpellLearnSkills[spell] = dbc_node;
-                ++dbc_count;
-                break;
+                if (dbc_node.skill && dbc_node.step)
+                {
+                    mSpellLearnSkills[spell] = dbc_node;
+                    ++dbc_count;
+                    break;
+                }
             }
         }
     }
@@ -2426,14 +2425,22 @@ void SpellMgr::LoadSpellAreas()
                 continue;
             }
 
-            switch (spellInfo->EffectApplyAuraName[EFFECT_INDEX_0])
+            bool validSpellEffect = false;
+            for (uint32 i = EFFECT_INDEX_0; i < MAX_EFFECT_INDEX; ++i)
             {
-                case SPELL_AURA_DUMMY:
-                case SPELL_AURA_GHOST:
-                    break;
-                default:
-                    sLog.outErrorDb("Spell %u listed in `spell_area` have aura spell requirement (%u) without dummy/phase/ghost aura in effect 0", spell, abs(spellArea.auraSpell));
-                    continue;
+                switch (spellInfo->EffectApplyAuraName[i])
+                {
+                    case SPELL_AURA_DUMMY:
+                    case SPELL_AURA_GHOST:
+                        validSpellEffect = true;
+                        break;
+                }
+            }
+
+            if (!validSpellEffect)
+            {
+                sLog.outErrorDb("Spell %u listed in `spell_area` have aura spell requirement (%u) without dummy/ghost aura in spell effects", spell, abs(spellArea.auraSpell));
+                continue;
             }
 
             if (uint32(abs(spellArea.auraSpell)) == spellArea.spellId)
