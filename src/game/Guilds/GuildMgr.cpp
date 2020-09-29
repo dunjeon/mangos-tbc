@@ -107,14 +107,14 @@ void GuildMgr::LoadGuilds()
     QueryResult* guildRanksResult   = CharacterDatabase.Query("SELECT guildid,rid,rname,rights,BankMoneyPerDay FROM guild_rank ORDER BY guildid ASC, rid ASC");
 
     // load guild members
-    //                                                                0       1                 2    3     4       5                  6
-    QueryResult* guildMembersResult = CharacterDatabase.Query("SELECT guildid,guild_member.guid,rank,pnote,offnote,BankResetTimeMoney,BankRemMoney,"
+    //                                                                0       1                  2     3     4       5                  6
+    QueryResult* guildMembersResult = CharacterDatabase.Query("SELECT guildid,guild_member.guid,`rank`,pnote,offnote,BankResetTimeMoney,BankRemMoney,"
                                       //   7                 8                9                 10               11                12
                                       "BankResetTimeTab0,BankRemSlotsTab0,BankResetTimeTab1,BankRemSlotsTab1,BankResetTimeTab2,BankRemSlotsTab2,"
                                       //   13                14               15                16               17                18
                                       "BankResetTimeTab3,BankRemSlotsTab3,BankResetTimeTab4,BankRemSlotsTab4,BankResetTimeTab5,BankRemSlotsTab5,"
-                                      //   19               20                21                22               23                      24
-                                      "characters.name, characters.level, characters.class, characters.zone, characters.logout_time, characters.account "
+                                      //   19               20                21                22                23               24                      25
+                                      "characters.name, characters.level, characters.class, characters.gender, characters.zone, characters.logout_time, characters.account "
                                       "FROM guild_member LEFT JOIN characters ON characters.guid = guild_member.guid ORDER BY guildid ASC");
 
     // load guild bank tab rights

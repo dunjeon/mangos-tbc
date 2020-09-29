@@ -315,6 +315,7 @@ class Loot
         void SendReleaseFor(Player* plr);
         bool IsItemAlreadyIn(uint32 itemId) const;
         void PrintLootList(ChatHandler& chat, WorldSession* session) const;
+        bool HasLoot() const;
         uint32 GetGoldAmount() const { return m_gold; }
         LootType GetLootType() const { return m_lootType; }
         LootItem* GetLootItemInSlot(uint32 itemSlot);
@@ -345,7 +346,7 @@ class Loot
         void SetGroupLootRight(Player* player);
         void GenerateMoneyLoot(uint32 minAmount, uint32 maxAmount);
         bool FillLoot(uint32 loot_id, LootStore const& store, Player* lootOwner, bool personal, bool noEmptyError = false);
-        void ForceLootAnimationCLientUpdate() const;
+        void ForceLootAnimationClientUpdate() const;
         void SetPlayerIsLooting(Player* player);
         void SetPlayerIsNotLooting(Player* player);
         void GetLootContentFor(Player* player, ByteBuffer& buffer);

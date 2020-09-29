@@ -17,47 +17,16 @@
 /* ScriptData
 SDName: Burning_Steppes
 SD%Complete: 100
-SDComment: Quest support: 4121, 4122, 4866
+SDComment: Quest support: 4121, 4122
 SDCategory: Burning Steppes
 EndScriptData */
 
 /* ContentData
-npc_ragged_john
 npc_grark_lorkrub
 EndContentData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "AI/ScriptDevAI/base/escort_ai.h"
-
-/*######
-## npc_ragged_john
-######*/
-
-struct npc_ragged_johnAI : public ScriptedAI
-{
-    npc_ragged_johnAI(Creature* pCreature) : ScriptedAI(pCreature) { Reset(); }
-
-    void Reset() override {}
-
-    void MoveInLineOfSight(Unit* who) override
-    {
-        if (who->HasAura(16468, EFFECT_INDEX_0))
-        {
-            if (who->GetTypeId() == TYPEID_PLAYER && m_creature->IsWithinDistInMap(who, 15) && who->isInAccessablePlaceFor(m_creature))
-            {
-                DoCastSpellIfCan(who, 16472);
-                ((Player*)who)->AreaExploredOrEventHappens(4866);
-            }
-        }
-
-        ScriptedAI::MoveInLineOfSight(who);
-    }
-};
-
-UnitAI* GetAI_npc_ragged_john(Creature* pCreature)
-{
-    return new npc_ragged_johnAI(pCreature);
-}
 
 /*######
 ## npc_grark_lorkrub
@@ -236,7 +205,6 @@ struct npc_grark_lorkrubAI : public npc_escortAI, private DialogueHelper
             case NPC_GRARK_LORKRUB:
                 // Fake death creature when the axe is lowered. This will allow us to finish the event
                 m_creature->InterruptNonMeleeSpells(true);
-                m_creature->SetHealth(1);
                 m_creature->StopMoving();
                 m_creature->ClearComboPointHolders();
                 m_creature->RemoveAllAurasOnDeath();
@@ -253,7 +221,7 @@ struct npc_grark_lorkrubAI : public npc_escortAI, private DialogueHelper
                 if (Player* pPlayer = GetPlayerForEscort())
                     pPlayer->RewardPlayerAndGroupAtEventExplored(QUEST_ID_PRECARIOUS_PREDICAMENT, m_creature);
                 // Kill self
-                m_creature->DealDamage(m_creature, m_creature->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NONE, nullptr, false);
+                m_creature->Suicide();
                 break;
         }
     }
@@ -322,7 +290,7 @@ struct npc_grark_lorkrubAI : public npc_escortAI, private DialogueHelper
     {
         DialogueUpdate(uiDiff);
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         DoMeleeAttackIfReady();
@@ -494,12 +462,8 @@ struct npc_klinfranAI : public ScriptedAI
                 {
                     if (Unit* pUnit = m_creature->GetMap()->GetUnit(itr->getUnitGuid()))
                     {
-                        if (pUnit->isAlive())
-                        {
-                            pCleaner->SetInCombatWith(pUnit);
-                            pCleaner->AddThreat(pUnit);
+                        if (pUnit->IsAlive())
                             pCleaner->AI()->AttackStart(pUnit);
-                        }
                     }
                 }
             }
@@ -547,17 +511,17 @@ struct npc_klinfranAI : public ScriptedAI
         {
             if (m_uiDespawn_Timer <= uiDiff)
             {
-                if (m_creature->isAlive() && !m_creature->isInCombat())
+                if (m_creature->IsAlive() && !m_creature->IsInCombat())
                     DemonDespawn(false);
             }
             else
                 m_uiDespawn_Timer -= uiDiff;
         }
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
-        if (m_creature->getThreatManager().getThreatList().size() > 1 /*|| pHunter->isDead()*/)
+        if (m_creature->getThreatManager().getThreatList().size() > 1 /*|| pHunter->IsDead()*/)
             DemonDespawn();
 
         if (m_uiDemonic_Frenzy_Timer < uiDiff)
@@ -584,7 +548,7 @@ bool GossipHello_npc_klinfran(Player* pPlayer, Creature* pCreature)
     return true;
 }
 
-bool GossipSelect_npc_klinfran(Player* pPlayer, Creature* pCreature, uint32 uiSender, uint32 uiAction)
+bool GossipSelect_npc_klinfran(Player* pPlayer, Creature* pCreature, uint32 /*uiSender*/, uint32 /*uiAction*/)
 {
     pPlayer->CLOSE_GOSSIP_MENU();
     ((npc_klinfranAI*)pCreature->AI())->BeginEvent(pPlayer->GetObjectGuid());
@@ -599,11 +563,6 @@ UnitAI* GetAI_npc_klinfran(Creature* pCreature)
 void AddSC_burning_steppes()
 {
     Script* pNewScript = new Script;
-    pNewScript->Name = "npc_ragged_john";
-    pNewScript->GetAI = &GetAI_npc_ragged_john;
-    pNewScript->RegisterSelf();
-
-    pNewScript = new Script;
     pNewScript->Name = "npc_grark_lorkrub";
     pNewScript->GetAI = &GetAI_npc_grark_lorkrub;
     pNewScript->pQuestAcceptNPC = &QuestAccept_npc_grark_lorkrub;

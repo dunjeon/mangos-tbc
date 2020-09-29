@@ -25,7 +25,7 @@ EndScriptData */
 boss_warchief_kargath_bladefist
 EndContentData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "shattered_halls.h"
 
 enum
@@ -87,13 +87,13 @@ struct boss_warchief_kargath_bladefistAI : public ScriptedAI
 
     void Reset() override
     {
-        m_uiSummoned = 2;
+        m_uiSummoned = 0;
         m_bInBlade = false;
         m_uiWaitTimer = 0;
 
         m_uiChargeTimer = 0;
         m_uiBladeDanceTimer = 45000;
-        m_uiSummonAssistantTimer = 30000;
+        m_uiSummonAssistantTimer = 20000;
         m_uiAssassinsTimer = 5000;
 
         DoCastSpellIfCan(m_creature, SPELL_DOUBLE_ATTACK, CAST_TRIGGERED | CAST_AURA_NOT_PRESENT);
@@ -197,7 +197,7 @@ struct boss_warchief_kargath_bladefistAI : public ScriptedAI
 
     void UpdateAI(const uint32 uiDiff) override
     {
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         // Check if out of range
@@ -230,7 +230,7 @@ struct boss_warchief_kargath_bladefistAI : public ScriptedAI
                         m_bInBlade = false;
                         SetCombatScriptStatus(false);
                         SetCombatMovement(true);
-                        DoStartMovement(m_creature->getVictim());
+                        DoStartMovement(m_creature->GetVictim());
                         m_uiWaitTimer = 0;
                         if (!m_bIsRegularMode)
                             m_uiChargeTimer = 500;
@@ -293,20 +293,19 @@ struct boss_warchief_kargath_bladefistAI : public ScriptedAI
 
             if (m_uiSummonAssistantTimer < uiDiff)
             {
-                for (uint32 i = 0; i < m_uiSummoned; ++i)
+                switch (m_uiSummoned)
                 {
-                    switch (urand(0, 2))
-                    {
-                        case 0: m_creature->SummonCreature(NPC_HEARTHEN_GUARD, AddsEntrance[0], AddsEntrance[1], AddsEntrance[2], 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000); break;
-                        case 1: m_creature->SummonCreature(NPC_SHARPSHOOTER_GUARD, AddsEntrance[0], AddsEntrance[1], AddsEntrance[2], 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000); break;
-                        case 2: m_creature->SummonCreature(NPC_REAVER_GUARD, AddsEntrance[0], AddsEntrance[1], AddsEntrance[2], 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000); break;
-                    }
+                    case 0: m_creature->SummonCreature(NPC_HEARTHEN_GUARD, AddsEntrance[0], AddsEntrance[1], AddsEntrance[2], 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000); break;
+                    case 1: m_creature->SummonCreature(NPC_REAVER_GUARD, AddsEntrance[0], AddsEntrance[1], AddsEntrance[2], 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000); break;
+                    case 2: m_creature->SummonCreature(NPC_SHARPSHOOTER_GUARD, AddsEntrance[0], AddsEntrance[1], AddsEntrance[2], 0.0f, TEMPSPAWN_TIMED_OOC_DESPAWN, 20000); break;
                 }
+                
+                m_uiSummoned++;
+                
+                if (m_uiSummoned == 3)
+                    m_uiSummoned = 0;
 
-                if (!urand(0, 4))
-                    ++m_uiSummoned;
-
-                m_uiSummonAssistantTimer = urand(25000, 35000);
+                m_uiSummonAssistantTimer = 20000;
             }
             else
                 m_uiSummonAssistantTimer -= uiDiff;
@@ -325,9 +324,9 @@ struct npc_blade_dance_targetAI : public ScriptedAI
 {
     npc_blade_dance_targetAI(Creature* creature) : ScriptedAI(creature) {}
     void Reset() override {}
-    void DamageTaken(Unit* /*pDealer*/, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* /*pDealer*/, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        uiDamage = std::min(m_creature->GetHealth() - 1, uiDamage);
+        damage = std::min(m_creature->GetHealth() - 1, damage);
     }
 };
 

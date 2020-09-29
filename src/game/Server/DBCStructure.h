@@ -220,7 +220,7 @@ struct CinematicSequencesEntry
 struct CreatureDisplayInfoEntry
 {
     uint32      Displayid;                                  // 0        m_ID
-    // 1        m_modelID
+    uint32      ModelId;                                    // 1        
     // 2        m_soundID
     uint32      ExtendedDisplayInfoID;                      // 3        m_extendedDisplayInfoID -> CreatureDisplayInfoExtraEntry::DisplayExtraId
     float       scale;                                      // 4        m_creatureModelScale
@@ -260,6 +260,28 @@ struct CreatureFamilyEntry
     char*     Name[16];                                     // 8-23
     // 24 string flags, unused
     // 25 icon, unused
+};
+
+struct CreatureModelDataEntry
+{
+    uint32 Id;
+    uint32 Flags;
+    //char* ModelPath;
+    //uint32 Unk1;
+    float Scale;                                             // Used in calculation of unit collision data
+    //int32 Unk2
+    //int32 Unk3
+    //uint32 Unk4
+    //uint32 Unk5
+    //float Unk6
+    //uint32 Unk7
+    //float Unk8
+    //uint32 Unk9
+    //uint32 Unk10
+    //float CollisionWidth;
+    float CollisionHeight;
+    float MountHeight;                                       // Used in calculation of unit collision data when mounted
+    //float Unks[7] wotlk has 11
 };
 
 #define MAX_CREATURE_SPELL_DATA_SLOT 4
@@ -423,12 +445,12 @@ struct GameObjectDisplayInfoEntry
     uint32 Displayid;                                       // 0 m_ID
     char* filename;                                         // 1 m_modelName
     // uint32 unknown2[10];                                 // 2-11 m_Sound
-    float geoBoxMinX;                                       // 12 m_geoBoxMinX (use first value as interact dist, mostly in hacks way)
-    float geoBoxMinY;                                       // 13 m_geoBoxMinY
-    float geoBoxMinZ;                                       // 14 m_geoBoxMinZ
-    float geoBoxMaxX;                                       // 15 m_geoBoxMaxX
-    float geoBoxMaxY;                                       // 16 m_geoBoxMaxY
-    float geoBoxMaxZ;                                       // 17 m_geoBoxMaxZ
+    float minX;                                             // 12 m_geoBoxMinX
+    float minY;                                             // 13 m_geoBoxMinY
+    float minZ;                                             // 14 m_geoBoxMinZ
+    float maxX;                                             // 15 m_geoBoxMaxX
+    float maxY;                                             // 16 m_geoBoxMaxY
+    float maxZ;                                             // 17 m_geoBoxMaxZ
 };
 
 struct GemPropertiesEntry
@@ -438,6 +460,34 @@ struct GemPropertiesEntry
     //          m_maxcount_inv
     //          m_maxcount_item
     uint32      color;                                      //          m_type
+};
+
+struct GMSurveyCurrentSurveyEntry
+{
+    uint32    localeID;                                     // 0    m_LANGID
+    uint32    surveyID;                                     // 1    m_GMSURVEY_ID
+};
+
+#define MAX_GMSURVEY_QUESTIONS 10                           // Hardcoded in all versions of the game, max amount of questions in gm survey
+
+struct GMSurveyEntry
+{
+    uint32    ID;                                           // 0    m_ID
+    uint32    questionID[MAX_GMSURVEY_QUESTIONS];           // 1-11 m_Q[10]
+};
+
+struct GMSurveyQuestionsEntry
+{
+    uint32    ID;                                           // 0    m_ID
+    char*     question[16];                                 // 1-17 m_Question_lang;
+    // 18 string flags, unused
+};
+
+struct GMTicketCategoryEntry
+{
+    uint32    ID;                                           // 0    m_ID
+    char*     name[16];                                     // 1-17 m_category_lang
+    // 18 string flags, unused
 };
 
 // All Gt* DBC store data for 100 levels, some by 100 per class/race
@@ -927,8 +977,8 @@ struct SpellCastTimesEntry
 {
     uint32    ID;                                           // 0        m_ID
     int32     CastTime;                                     // 1        m_base
-    // float     CastTimePerLevel;                          // 2        m_perLevel
-    // int32     MinCastTime;                               // 3        m_minimum
+    int32     CastTimePerLevel;                             // 2        m_perLevel
+    int32     MinCastTime;                                  // 3        m_minimum
 };
 
 struct SpellFocusObjectEntry
@@ -951,7 +1001,7 @@ struct SpellRangeEntry
     uint32    ID;                                           // 0        m_ID
     float     minRange;                                     // 1        m_rangeMin
     float     maxRange;                                     // 2        m_rangeMax
-    // uint32  Flags;                                       // 3        m_flags
+    uint32  Flags;                                          // 3        m_flags
     // char*   Name[16];                                    // 4-19     m_displayName_lang
     // uint32  NameFlags;                                   // 20 string flags
     // char*   ShortName[16];                               // 21-36    m_displayNameShort_lang
@@ -1003,6 +1053,38 @@ struct SpellItemEnchantmentConditionEntry
     uint8   Comparator[5];
     uint8   CompareColor[5];
     uint32  Value[5];
+};
+
+struct SpellVisualEntry
+{
+    uint32 Id;
+    //uint32 PrecastKit;
+    //uint32 CastingKit;
+    //uint32 ImpactKit;
+    //uint32 StateKit;
+    //uint32 StateDoneKit; - from wotlk, not in tbc
+    //uint32 ChannelKit;
+    uint32 HasMissile;
+    int32 MissileModel;
+    //uint32 MissilePathType;
+    //uint32 MissileDestinationAttachment;
+    //uint32 MissileSound;
+    //uint32 AnimEventSoundID;
+    //uint32 Flags;
+    //uint32 CasterImpactKit;
+    //uint32 TargetImpactKit;
+    //int32 MissileAttachment;
+    //uint32 MissileFollowGroundHeight;
+    //uint32 MissileFollowGroundDropSpeed;
+    //uint32 MissileFollowGroundApprach;
+    //uint32 MissileFollowGroundFlags;
+    //uint32 MissileMotionId;
+    //uint32 MissileTargetingKit;
+    //uint32 InstantAreaKit;
+    //uint32 ImpactAreaKit;
+    //uint32 PersistentAreaKit;
+    //DBCPosition3D MissileCastOffset; - from wotlk, not in tbc
+    //DBCPosition3D MissileImpactOffset; - from wotlk, not in tbc
 };
 
 struct StableSlotPricesEntry
@@ -1148,6 +1230,7 @@ struct WorldMapOverlayEntry
 };
 */
 
+/* Structure WorldSafeLocsEntry is no longer loaded from DBC but from DB instead
 struct WorldSafeLocsEntry
 {
     uint32    ID;                                           // 0        m_ID
@@ -1158,6 +1241,7 @@ struct WorldSafeLocsEntry
     // char*   name[16]                                     // 5-20     m_AreaName_lang
     // 21 string flags
 };
+*/
 
 // GCC have alternative #pragma pack() syntax and old gcc version not support pack(pop), also any gcc version not support it at some platform
 #if defined( __GNUC__ )

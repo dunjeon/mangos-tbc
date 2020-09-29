@@ -26,7 +26,7 @@ mob_omrogg_heads
 boss_warbringer_omrogg
 EndContentData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "shattered_halls.h"
 
 enum
@@ -41,6 +41,8 @@ enum
 
     SPELL_BURNING_MAUL          = 30598,
     SPELL_BURNING_MAUL_H        = 36056,
+
+    SPELL_BEATDOWN              = 30618, // Unused - used for threat reset
 
     NPC_LEFT_HEAD               = 19523,
     NPC_RIGHT_HEAD              = 19524
@@ -333,7 +335,7 @@ struct boss_warbringer_omroggAI : public ScriptedAI
         else
             m_uiDelayTimer -= uiDiff;
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         if (m_uiBlastCount && m_uiBlastWaveTimer)

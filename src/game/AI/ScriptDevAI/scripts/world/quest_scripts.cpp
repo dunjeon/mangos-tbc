@@ -18,7 +18,7 @@
 SD2 file for global quests scripts
 */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 
 enum
 {
@@ -39,7 +39,7 @@ enum
     TITLE_HAND_OF_ADAL                      = 64,
 };
 
-bool QuestRewarded_tbc_attunement_titles(Player* player, Creature* creature, Quest const* quest)
+bool QuestRewarded_tbc_attunement_titles(Player* player, Creature* /*creature*/, Quest const* quest)
 {
     switch (quest->GetQuestId())
     {
@@ -115,7 +115,7 @@ struct npc_xiri : public ScriptedAI
         m_leaderGUID.Clear();
     }
 
-    void ReceiveAIEvent(AIEventType eventType, Unit* sender, Unit* invoker, uint32 miscValue) override
+    void ReceiveAIEvent(AIEventType eventType, Unit* sender, Unit* /*invoker*/, uint32 /*miscValue*/) override
     {
         /* A:
            From xiri = introduce Akama and friends
@@ -170,7 +170,7 @@ struct npc_xiri : public ScriptedAI
             {
                 Creature* akama = GetClosestCreatureWithEntry(m_creature, NPC_AKAMA, 300.0f);
 
-                if (akama && !akama->isInCombat() && !akama->IsInEvadeMode())
+                if (akama && !akama->IsInCombat() && !akama->GetCombatManager().IsInEvadeMode())
                 {
                     akama->addUnitState(UNIT_STAT_WAYPOINT_PAUSED);
                     akama->AI()->SetReactState(REACT_PASSIVE);
@@ -240,7 +240,7 @@ struct npc_xiri : public ScriptedAI
             {
                 Creature* akama = GetClosestCreatureWithEntry(m_creature, NPC_AKAMA, 300.0f);
 
-                if (akama && !akama->isInCombat() && !akama->IsInEvadeMode())
+                if (akama && !akama->IsInCombat() && !akama->GetCombatManager().IsInEvadeMode())
                 {
                     akama->addUnitState(UNIT_STAT_WAYPOINT_PAUSED);
 
@@ -267,7 +267,7 @@ struct npc_xiri : public ScriptedAI
         m_bAkamaInteractionPerformed = true;
     }
 
-    void SummonedMovementInform(Creature* pSummoned, uint32 uiMotionType, uint32 uiPointId) override
+    void SummonedMovementInform(Creature* pSummoned, uint32 /*uiMotionType*/, uint32 uiPointId) override
     {
         if (/*pSummoned->GetObjectGuid() == m_leaderGUID*/pSummoned->GetEntry() == NPC_ASHTONGUE_DEATHSWORN && uiPointId == 5)
         {

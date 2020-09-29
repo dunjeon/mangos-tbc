@@ -27,7 +27,7 @@ go_mausoleum_trigger
 npc_calvin_montague
 EndContentData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 
 /*######
 ## go_mausoleum_door
@@ -104,11 +104,11 @@ struct npc_calvin_montagueAI : public ScriptedAI
         m_playerGuid.Clear();
     }
 
-    void DamageTaken(Unit* pDoneBy, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* pDoneBy, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (uiDamage > m_creature->GetHealth() || ((m_creature->GetHealth() - uiDamage) * 100 / m_creature->GetMaxHealth() < 15))
+        if (damage > m_creature->GetHealth() || ((m_creature->GetHealth() - damage) * 100 / m_creature->GetMaxHealth() < 15))
         {
-            uiDamage = 0;
+            damage = std::min(damage, m_creature->GetHealth() - 1);
 
             m_creature->CombatStop(true);
             SetReactState(REACT_PASSIVE);
@@ -153,7 +153,7 @@ struct npc_calvin_montagueAI : public ScriptedAI
             return;
         }
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         DoMeleeAttackIfReady();

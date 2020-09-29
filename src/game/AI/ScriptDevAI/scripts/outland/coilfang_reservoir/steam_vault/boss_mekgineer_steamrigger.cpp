@@ -26,7 +26,7 @@ boss_mekgineer_steamrigger
 mob_steamrigger_mechanic
 EndContentData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "steam_vault.h"
 
 enum
@@ -44,7 +44,7 @@ enum
     SPELL_SUPER_SHRINK_RAY      = 31485,
     SPELL_SAW_BLADE             = 31486,
     SPELL_ELECTRIFIED_NET       = 35107,
-    // SPELL_ENRAGE_H            = 1,                       // current enrage spell not known
+    SPELL_BERSERK               = 26662,
 
     NPC_STEAMRIGGER_MECHANIC    = 17951,
 
@@ -153,7 +153,7 @@ struct boss_mekgineer_steamriggerAI : public ScriptedAI
 
     void UpdateAI(const uint32 uiDiff) override
     {
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         if (m_uiShrinkTimer < uiDiff)
@@ -168,7 +168,7 @@ struct boss_mekgineer_steamriggerAI : public ScriptedAI
         {
             Unit* pTarget = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 1, nullptr, SELECT_FLAG_PLAYER);
             if (!pTarget)
-                pTarget = m_creature->getVictim();
+                pTarget = m_creature->GetVictim();
 
             if (pTarget)
             {
@@ -268,7 +268,7 @@ struct mob_steamrigger_mechanicAI : public ScriptedAI
 
     void UpdateAI(const uint32 /*uiDiff*/) override
     {
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         DoMeleeAttackIfReady();

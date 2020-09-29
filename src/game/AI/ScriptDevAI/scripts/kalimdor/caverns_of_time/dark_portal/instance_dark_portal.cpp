@@ -21,7 +21,7 @@ SDComment: Quest support: 9836, 10297. Some visuals for the event are missing;
 SDCategory: Caverns of Time, The Dark Portal
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "dark_portal.h"
 
 instance_dark_portal::instance_dark_portal(Map* pMap) : ScriptedInstance(pMap),
@@ -29,14 +29,13 @@ instance_dark_portal::instance_dark_portal(Map* pMap) : ScriptedInstance(pMap),
     m_uiWorldStateRiftCount(0),
     m_uiWorldStateShieldCount(100),
     m_uiSummonedCrystalCount(0),
-
     m_bHasIntroYelled(false),
     m_uiMedivhYellCount(1),
     m_uiNextPortalTimer(0),
-    m_uiPostEventTimer(0),
-    m_uiPostEventStep(0),
     m_uiSummonCrystalTimer(0),
-    m_uiCurrentRiftId(0)
+    m_uiCurrentRiftId(0),
+    m_uiPostEventTimer(0),
+    m_uiPostEventStep(0)
 {
     Initialize();
 }
@@ -126,7 +125,7 @@ void instance_dark_portal::SetData(uint32 uiType, uint32 uiData)
             {
                 if (Creature* pMedivh = GetSingleCreatureFromStorage(NPC_MEDIVH))
                 {
-                    if (pMedivh->isAlive())
+                    if (pMedivh->IsAlive())
                     {
                         DoScriptText(SAY_MEDIVH_ENTER, pMedivh);
 
@@ -184,10 +183,10 @@ void instance_dark_portal::SetData(uint32 uiType, uint32 uiData)
                 // Kill the npc when the shield is broken
                 if (!m_uiWorldStateShieldCount)
                 {
-                    if (Creature* pMedivh = GetSingleCreatureFromStorage(NPC_MEDIVH))
+                    if (Creature* medivh = GetSingleCreatureFromStorage(NPC_MEDIVH))
                     {
-                        if (pMedivh->isAlive())
-                            pMedivh->DealDamage(pMedivh, pMedivh->GetHealth(), nullptr, DIRECT_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, nullptr, false);
+                        if (medivh->IsAlive())
+                            medivh->Suicide();
                     }
                 }
             }
@@ -548,7 +547,7 @@ bool instance_dark_portal::CheckConditionCriteriaMeet(Player const* pPlayer, uin
 
             if (Creature* pMedivh = GetSingleCreatureFromStorage(NPC_MEDIVH))
             {
-                if (pMedivh->isAlive())
+                if (pMedivh->IsAlive())
                     return true;
                 else
                     return false;
@@ -558,7 +557,7 @@ bool instance_dark_portal::CheckConditionCriteriaMeet(Player const* pPlayer, uin
         }
     }
 
-    script_error_log("instance_mount_hyjal::CheckConditionCriteriaMeet called with unsupported Id %u. Called with param plr %s, src %s, condition source type %u",
+    script_error_log("instance_dark_portal::CheckConditionCriteriaMeet called with unsupported Id %u. Called with param plr %s, src %s, condition source type %u",
         uiInstanceConditionId, pPlayer ? pPlayer->GetGuidStr().c_str() : "nullptr", pConditionSource ? pConditionSource->GetGuidStr().c_str() : "nullptr", conditionSourceType);
     return false;
 }
@@ -573,7 +572,7 @@ bool AreaTrigger_at_dark_portal(Player* pPlayer, AreaTriggerEntry const* pAt)
 {
     if (pAt->id == AREATRIGGER_MEDIVH || pAt->id == AREATRIGGER_ENTER)
     {
-        if (pPlayer->isGameMaster() || pPlayer->isDead())
+        if (pPlayer->isGameMaster() || pPlayer->IsDead())
             return false;
 
         if (instance_dark_portal* pInstance = (instance_dark_portal*)pPlayer->GetInstanceData())

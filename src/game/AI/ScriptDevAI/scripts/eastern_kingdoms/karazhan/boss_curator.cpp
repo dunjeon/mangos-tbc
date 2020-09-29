@@ -28,7 +28,7 @@ Patches
 Removed sometime prior to 2.1.
 */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "karazhan.h"
 #include "Spells/Spell.h"
 #include "AI/ScriptDevAI/base/TimerAI.h"
@@ -81,14 +81,14 @@ enum CuratorActions
     CURATOR_ACTION_MAX,
 };
 
-struct boss_curatorAI : public ScriptedAI, public CombatTimerAI
+struct boss_curatorAI : public ScriptedAI, public CombatActions
 {
-    boss_curatorAI(Creature* pCreature) : ScriptedAI(pCreature), CombatTimerAI(CURATOR_ACTION_MAX)
+    boss_curatorAI(Creature* pCreature) : ScriptedAI(pCreature), CombatActions(CURATOR_ACTION_MAX)
     {
         m_pInstance  = (ScriptedInstance*)pCreature->GetInstanceData();
-        AddCombatAction(CURATOR_ACTION_BERSERK, 0);
-        AddCombatAction(CURATOR_ACTION_FLARE, 0);
-        AddCombatAction(CURATOR_ACTION_HATEFUL_BOLT, 0);
+        AddCombatAction(CURATOR_ACTION_BERSERK, 0u);
+        AddCombatAction(CURATOR_ACTION_FLARE, 0u);
+        AddCombatAction(CURATOR_ACTION_HATEFUL_BOLT, 0u);
         Reset();
     }
 
@@ -108,7 +108,6 @@ struct boss_curatorAI : public ScriptedAI, public CombatTimerAI
 
         m_creature->ApplySpellImmune(nullptr, IMMUNITY_EFFECT, SPELL_EFFECT_POWER_DRAIN, true);
         m_creature->ApplySpellImmune(nullptr, IMMUNITY_EFFECT, SPELL_EFFECT_POWER_BURN, true);
-        m_creature->ApplySpellImmune(nullptr, IMMUNITY_DISPEL, DISPEL_POISON, true);
         m_creature->ApplySpellImmune(nullptr, IMMUNITY_DAMAGE, SPELL_SCHOOL_MASK_ARCANE, true);
 
         m_phase = CURATOR_PHASE_1;
@@ -275,10 +274,10 @@ struct boss_curatorAI : public ScriptedAI, public CombatTimerAI
 
     void UpdateAI(const uint32 diff) override
     {
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
-        UpdateTimers(diff, m_creature->isInCombat());
+        UpdateTimers(diff, m_creature->IsInCombat());
         ExecuteActions();
 
         // if (!m_creature->HasAura(SPELL_ASTRAL_ARMOR))

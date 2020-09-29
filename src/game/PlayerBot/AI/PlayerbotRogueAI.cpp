@@ -115,7 +115,7 @@ CombatManeuverReturns PlayerbotRogueAI::DoFirstCombatManeuver(Unit* pTarget)
 
 CombatManeuverReturns PlayerbotRogueAI::DoFirstCombatManeuverPVE(Unit* pTarget)
 {
-    if (STEALTH > 0 && !m_bot->HasAura(STEALTH, EFFECT_INDEX_0) && m_ai->CastSpell(STEALTH, *m_bot))
+    if (STEALTH > 0 && !m_bot->HasAura(STEALTH, EFFECT_INDEX_0) && m_ai->CastSpell(STEALTH, *m_bot) == SPELL_CAST_OK)
     {
         return RETURN_FINISHED_FIRST_MOVES; // DoNextCombatManeuver handles active stealth
     }
@@ -132,7 +132,7 @@ CombatManeuverReturns PlayerbotRogueAI::DoFirstCombatManeuverPVE(Unit* pTarget)
 // TODO: blatant copy of PVE for now, please PVP-port it
 CombatManeuverReturns PlayerbotRogueAI::DoFirstCombatManeuverPVP(Unit* pTarget)
 {
-    if (STEALTH > 0 && !m_bot->HasAura(STEALTH, EFFECT_INDEX_0) && m_ai->CastSpell(STEALTH, *m_bot))
+    if (STEALTH > 0 && !m_bot->HasAura(STEALTH, EFFECT_INDEX_0) && m_ai->CastSpell(STEALTH, *m_bot) == SPELL_CAST_OK)
     {
         return RETURN_FINISHED_FIRST_MOVES; // DoNextCombatManeuver handles active stealth
     }
@@ -175,7 +175,7 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVE(Unit* pTarget)
     if (!m_ai)    return RETURN_NO_ACTION_ERROR;
     if (!m_bot)   return RETURN_NO_ACTION_ERROR;
 
-    Unit* pVictim = pTarget->getVictim();
+    Unit* pVictim = pTarget->GetVictim();
     bool meleeReach = m_bot->CanReachWithMeleeAttack(pTarget);
 
     // TODO: make this work better...
@@ -199,13 +199,13 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVE(Unit* pTarget)
     {
         if (PICK_POCKET > 0 && m_ai->In_Reach(pTarget, PICK_POCKET) && (pTarget->GetCreatureTypeMask() & CREATURE_TYPEMASK_HUMANOID_OR_UNDEAD) != 0 && m_ai->PickPocket(pTarget))
             return RETURN_CONTINUE;
-        if (PREMEDITATION > 0 && m_ai->CastSpell(PREMEDITATION, *pTarget))
+        if (PREMEDITATION > 0 && m_ai->CastSpell(PREMEDITATION, *pTarget) == SPELL_CAST_OK)
             return RETURN_CONTINUE;
-        if (AMBUSH > 0 && pTarget->isInBackInMap(m_bot, 5.0f) && m_ai->CastSpell(AMBUSH, *pTarget))
+        if (AMBUSH > 0 && pTarget->isInBackInMap(m_bot, 5.0f) && m_ai->CastSpell(AMBUSH, *pTarget) == SPELL_CAST_OK)
             return RETURN_CONTINUE;
-        if (CHEAP_SHOT > 0 && !pTarget->HasAura(CHEAP_SHOT, EFFECT_INDEX_0) && m_ai->CastSpell(CHEAP_SHOT, *pTarget))
+        if (CHEAP_SHOT > 0 && !pTarget->HasAura(CHEAP_SHOT, EFFECT_INDEX_0) && m_ai->CastSpell(CHEAP_SHOT, *pTarget) == SPELL_CAST_OK)
             return RETURN_CONTINUE;
-        if (GARROTE > 0 && pTarget->isInBackInMap(m_bot, 5.0f) && m_ai->CastSpell(GARROTE, *pTarget))
+        if (GARROTE > 0 && pTarget->isInBackInMap(m_bot, 5.0f) && m_ai->CastSpell(GARROTE, *pTarget) == SPELL_CAST_OK)
             return RETURN_CONTINUE;
 
         // No appropriate action found, remove stealth
@@ -220,34 +220,34 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVE(Unit* pTarget)
         // Aggroed by an elite
         if (m_ai->IsElite(newTarget))
         {
-            if (VANISH > 0 && m_ai->GetHealthPercent() <= 20 && m_bot->IsSpellReady(VANISH) && !m_bot->HasAura(FEINT, EFFECT_INDEX_0) && m_ai->CastSpell(VANISH))
+            if (VANISH > 0 && m_ai->GetHealthPercent() <= 20 && m_bot->IsSpellReady(VANISH) && !m_bot->HasAura(FEINT, EFFECT_INDEX_0) && m_ai->CastSpell(VANISH) == SPELL_CAST_OK)
             {
                 m_ai->SetIgnoreUpdateTime(11);
                 return RETURN_CONTINUE;
             }
-            if (BLIND > 0 && m_ai->GetHealthPercent() <= 30 && m_ai->HasSpellReagents(BLIND) && !newTarget->HasAura(BLIND, EFFECT_INDEX_0) && m_ai->CastSpell(BLIND, *newTarget))
+            if (BLIND > 0 && m_ai->GetHealthPercent() <= 30 && m_ai->HasSpellReagents(BLIND) && !newTarget->HasAura(BLIND, EFFECT_INDEX_0) && m_ai->CastSpell(BLIND, *newTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (EVASION > 0 && m_ai->GetHealthPercent() <= 35 && m_bot->IsSpellReady(EVASION) && !m_bot->HasAura(EVASION, EFFECT_INDEX_0) && m_ai->CastSpell(EVASION))
+            if (EVASION > 0 && m_ai->GetHealthPercent() <= 35 && m_bot->IsSpellReady(EVASION) && !m_bot->HasAura(EVASION, EFFECT_INDEX_0) && m_ai->CastSpell(EVASION) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (FEINT > 0 && m_bot->IsSpellReady(FEINT) && m_ai->CastSpell(FEINT, *newTarget))
+            if (FEINT > 0 && m_bot->IsSpellReady(FEINT) && m_ai->CastSpell(FEINT, *newTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (PREPARATION > 0 && m_bot->IsSpellReady(PREPARATION) && (!m_bot->IsSpellReady(EVASION) || !m_bot->IsSpellReady(VANISH)) && m_ai->CastSpell(PREPARATION))
+            if (PREPARATION > 0 && m_bot->IsSpellReady(PREPARATION) && (!m_bot->IsSpellReady(EVASION) || !m_bot->IsSpellReady(VANISH)) && m_ai->CastSpell(PREPARATION) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
         }
 
         // Default: Gouge the target
-        if (GOUGE > 0 && pTarget->isInFrontInMap(m_bot, 5.0f) && !pTarget->HasAura(GOUGE, EFFECT_INDEX_0) && m_ai->CastSpell(GOUGE, *newTarget))
+        if (GOUGE > 0 && pTarget->isInFrontInMap(m_bot, 5.0f) && !pTarget->HasAura(GOUGE, EFFECT_INDEX_0) && m_ai->CastSpell(GOUGE, *newTarget) == SPELL_CAST_OK)
             return RETURN_CONTINUE;
     }
 
     // Buff bot with cold blood if available
     // This buff is done after the stealth and aggro management code because we don't want to give starting extra damage (= extra threat) to a bot
     // as it is obviously not soloing his/her target
-    if (COLD_BLOOD > 0 && !m_bot->HasAura(COLD_BLOOD, EFFECT_INDEX_0) && m_bot->IsSpellReady(COLD_BLOOD) && m_ai->CastSpell(COLD_BLOOD, *m_bot))
+    if (COLD_BLOOD > 0 && !m_bot->HasAura(COLD_BLOOD, EFFECT_INDEX_0) && m_bot->IsSpellReady(COLD_BLOOD) && m_ai->CastSpell(COLD_BLOOD, *m_bot) == SPELL_CAST_OK)
         return RETURN_CONTINUE;
 
     // Rogue like behaviour ^^
-    /*if (VANISH > 0 && GetMaster()->isDead()) { //Causes the server to crash :( removed for now.
+    /*if (VANISH > 0 && GetMaster()->IsDead()) { //Causes the server to crash :( removed for now.
         m_bot->AttackStop();
         m_bot->RemoveAllAttackers();
         m_ai->CastSpell(VANISH);
@@ -260,15 +260,14 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVE(Unit* pTarget)
         return RETURN_CONTINUE;
 
     // If target is elite and wounded: use adrenaline rush to finish it quicker
-    if (ADRENALINE_RUSH > 0 && m_ai->IsElite(pTarget) && pTarget->GetHealthPercent() < 50 && !m_bot->HasAura(ADRENALINE_RUSH, EFFECT_INDEX_0) && m_bot->IsSpellReady(ADRENALINE_RUSH) && m_ai->CastSpell(ADRENALINE_RUSH, *m_bot))
+    if (ADRENALINE_RUSH > 0 && m_ai->IsElite(pTarget) && pTarget->GetHealthPercent() < 50 && !m_bot->HasAura(ADRENALINE_RUSH, EFFECT_INDEX_0) && m_bot->IsSpellReady(ADRENALINE_RUSH) && m_ai->CastSpell(ADRENALINE_RUSH, *m_bot) == SPELL_CAST_OK)
         return RETURN_CONTINUE;
 
     // Bot's target is casting a spell: try to interrupt it
     if (pTarget->IsNonMeleeSpellCasted(true))
     {
-        if (KIDNEY_SHOT > 0 && m_bot->IsSpellReady(KIDNEY_SHOT) && m_bot->GetComboPoints() >= 1 && m_ai->CastSpell(KIDNEY_SHOT, *pTarget))
-            return RETURN_CONTINUE;
-        else if (KICK > 0 && m_bot->IsSpellReady(KICK) && m_ai->CastSpell(KICK, *pTarget))
+        if ((KIDNEY_SHOT > 0 && m_bot->IsSpellReady(KIDNEY_SHOT) && m_bot->GetComboPoints() >= 1 && m_ai->CastSpell(KIDNEY_SHOT, *pTarget) == SPELL_CAST_OK) ||
+            (KICK > 0 && m_bot->IsSpellReady(KICK) && m_ai->CastSpell(KICK, *pTarget) == SPELL_CAST_OK))
             return RETURN_CONTINUE;
     }
 
@@ -277,40 +276,45 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVE(Unit* pTarget)
     // TODO : define combo points treshold depending on target rank and HP
     if (m_bot->GetComboPoints() >= 4)
     {
-        Creature* pCreature = (Creature*) pTarget;
         // wait for energy
         if (m_ai->GetEnergyAmount() < 25 && (KIDNEY_SHOT || SLICE_DICE || EXPOSE_ARMOR || RUPTURE))
             return RETURN_NO_ACTION_OK;
 
         // If target is elite Slice & Dice is a must have
-        if (SLICE_DICE > 0 && m_ai->IsElite(pTarget) && !m_bot->HasAura(SLICE_DICE, EFFECT_INDEX_1) && m_ai->CastSpell(SLICE_DICE, *pTarget)) // 25 energy (checked above)
+        if (SLICE_DICE > 0 && m_ai->IsElite(pTarget) && !m_bot->HasAura(SLICE_DICE, EFFECT_INDEX_1) && m_ai->CastSpell(SLICE_DICE, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
             return RETURN_CONTINUE;
 
-        // If target is a warrior or paladin type (high armor): expose its armor if not a worldboss
-        if (EXPOSE_ARMOR > 0 && !m_ai->IsElite(pTarget, true) && pCreature && pCreature->GetCreatureInfo()->UnitClass != 8 && !pTarget->HasAura(EXPOSE_ARMOR, EFFECT_INDEX_0) && m_ai->CastSpell(EXPOSE_ARMOR, *pTarget)) // 25 energy (checked above)
-            return RETURN_CONTINUE;
+        // If target is a warrior or paladin type (high armor): expose its armor unless already tanked by a warrior (Sunder Armor > Expose Armor)
+        if (m_ai->IsElite(pTarget) && ((Creature*)pTarget)->GetCreatureInfo()->UnitClass != 8)
+        {
+            if  (!m_ai->GetGroupTank() || (m_ai->GetGroupTank() && m_ai->GetGroupTank()->GetVictim() != pTarget))
+            {
+                if (EXPOSE_ARMOR > 0 && !pTarget->HasAura(EXPOSE_ARMOR, EFFECT_INDEX_0) && m_ai->CastSpell(EXPOSE_ARMOR, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
+                    return RETURN_CONTINUE;
+            }
+        }
 
-        if (RUPTURE > 0 && !pTarget->HasAura(RUPTURE, EFFECT_INDEX_0) && m_ai->CastSpell(RUPTURE, *pTarget)) // 25 energy (checked above)
+        if (RUPTURE > 0 && !pTarget->HasAura(RUPTURE, EFFECT_INDEX_0) && m_ai->CastSpell(RUPTURE, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
             return RETURN_CONTINUE;
 
         // default combo action or if other combo action is unavailable/failed
         // wait for energy
         if (m_ai->GetEnergyAmount() < 35 && EVISCERATE > 0)
             return RETURN_NO_ACTION_OK;
-        if (EVISCERATE > 0 && m_ai->CastSpell(EVISCERATE, *pTarget))
+        if (EVISCERATE > 0 && m_ai->CastSpell(EVISCERATE, *pTarget) == SPELL_CAST_OK)
             return RETURN_CONTINUE;
 
         // failed for some (non-energy related) reason, fall through to normal attacks to maximize DPS
     }
 
     // Combo generating or damage increasing attacks
-    if (HEMORRHAGE > 0 && !pTarget->HasAura(HEMORRHAGE, EFFECT_INDEX_2) && m_ai->CastSpell(HEMORRHAGE, *pTarget))
+    if (HEMORRHAGE > 0 && !pTarget->HasAura(HEMORRHAGE, EFFECT_INDEX_2) && m_ai->CastSpell(HEMORRHAGE, *pTarget) == SPELL_CAST_OK)
         return RETURN_CONTINUE;
-    if (BACKSTAB > 0 && pTarget->isInBackInMap(m_bot, 5.0f) && m_ai->CastSpell(BACKSTAB, *pTarget))
+    if (BACKSTAB > 0 && pTarget->isInBackInMap(m_bot, 5.0f) && m_ai->CastSpell(BACKSTAB, *pTarget) == SPELL_CAST_OK)
         return RETURN_CONTINUE;
-    if (GHOSTLY_STRIKE > 0 && m_bot->IsSpellReady(GHOSTLY_STRIKE) && m_ai->CastSpell(GHOSTLY_STRIKE, *pTarget))
+    if (GHOSTLY_STRIKE > 0 && m_bot->IsSpellReady(GHOSTLY_STRIKE) && m_ai->CastSpell(GHOSTLY_STRIKE, *pTarget) == SPELL_CAST_OK)
         return RETURN_CONTINUE;
-    if (SINISTER_STRIKE > 0 && m_ai->CastSpell(SINISTER_STRIKE, *pTarget))
+    if (SINISTER_STRIKE > 0 && m_ai->CastSpell(SINISTER_STRIKE, *pTarget) == SPELL_CAST_OK)
         return RETURN_CONTINUE;
 
     return RETURN_NO_ACTION_OK;
@@ -322,11 +326,11 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVP(Unit* pTarget)
     if (!m_ai)    return RETURN_NO_ACTION_ERROR;
     if (!m_bot)   return RETURN_NO_ACTION_ERROR;
 
-    Unit* pVictim = pTarget->getVictim();
+    Unit* pVictim = pTarget->GetVictim();
     bool meleeReach = m_bot->CanReachWithMeleeAttack(pTarget);
 
     // decide what to do:
-    if (pVictim == m_bot && CLOAK_OF_SHADOWS > 0 && m_bot->HasAura(SPELL_AURA_PERIODIC_DAMAGE) && !m_bot->HasAura(CLOAK_OF_SHADOWS, EFFECT_INDEX_0) && m_ai->CastSpell(CLOAK_OF_SHADOWS))
+    if (pVictim == m_bot && CLOAK_OF_SHADOWS > 0 && m_bot->HasAura(SPELL_AURA_PERIODIC_DAMAGE) && !m_bot->HasAura(CLOAK_OF_SHADOWS, EFFECT_INDEX_0) && m_ai->CastSpell(CLOAK_OF_SHADOWS) == SPELL_CAST_OK)
     {
         if (m_ai->GetManager()->m_confDebugWhisper)
             m_ai->TellMaster("CoS!");
@@ -349,13 +353,13 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVP(Unit* pTarget)
     switch (SpellSequence)
     {
         case RogueStealth:
-            if (PREMEDITATION > 0 && m_ai->CastSpell(PREMEDITATION, *pTarget))
+            if (PREMEDITATION > 0 && m_ai->CastSpell(PREMEDITATION, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (AMBUSH > 0 && m_ai->CastSpell(AMBUSH, *pTarget))
+            if (AMBUSH > 0 && m_ai->CastSpell(AMBUSH, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (CHEAP_SHOT > 0 && !pTarget->HasAura(CHEAP_SHOT, EFFECT_INDEX_0) && m_ai->CastSpell(CHEAP_SHOT, *pTarget))
+            if (CHEAP_SHOT > 0 && !pTarget->HasAura(CHEAP_SHOT, EFFECT_INDEX_0) && m_ai->CastSpell(CHEAP_SHOT, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (GARROTE > 0 && m_ai->CastSpell(GARROTE, *pTarget))
+            if (GARROTE > 0 && m_ai->CastSpell(GARROTE, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
 
             // No appropriate action found, remove stealth
@@ -363,24 +367,23 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVP(Unit* pTarget)
             return RETURN_CONTINUE;
 
         case RogueThreat:
-            if (GOUGE > 0 && !pTarget->HasAura(GOUGE, EFFECT_INDEX_0) && m_ai->CastSpell(GOUGE, *pTarget))
+            if (GOUGE > 0 && !pTarget->HasAura(GOUGE, EFFECT_INDEX_0) && m_ai->CastSpell(GOUGE, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (EVASION > 0 && m_ai->GetHealthPercent() <= 35 && !m_bot->HasAura(EVASION, EFFECT_INDEX_0) && m_ai->CastSpell(EVASION))
+            if (EVASION > 0 && m_ai->GetHealthPercent() <= 35 && !m_bot->HasAura(EVASION, EFFECT_INDEX_0) && m_ai->CastSpell(EVASION) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (BLIND > 0 && m_ai->GetHealthPercent() <= 30 && !pTarget->HasAura(BLIND, EFFECT_INDEX_0) && m_ai->CastSpell(BLIND, *pTarget))
+            if (BLIND > 0 && m_ai->GetHealthPercent() <= 30 && !pTarget->HasAura(BLIND, EFFECT_INDEX_0) && m_ai->CastSpell(BLIND, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (FEINT > 0 && m_ai->GetHealthPercent() <= 25 && m_ai->CastSpell(FEINT))
+            if (FEINT > 0 && m_ai->GetHealthPercent() <= 25 && m_ai->CastSpell(FEINT) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (VANISH > 0 && m_ai->GetHealthPercent() <= 20 && !m_bot->HasAura(FEINT, EFFECT_INDEX_0) && m_ai->CastSpell(VANISH))
+            if (VANISH > 0 && m_ai->GetHealthPercent() <= 20 && !m_bot->HasAura(FEINT, EFFECT_INDEX_0) && m_ai->CastSpell(VANISH) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (PREPARATION > 0 && m_ai->CastSpell(PREPARATION))
+            if (PREPARATION > 0 && m_ai->CastSpell(PREPARATION) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
             break;
 
         case RogueSpellPreventing:
-            if (KIDNEY_SHOT > 0 && m_bot->GetComboPoints() >= 2 && m_ai->CastSpell(KIDNEY_SHOT, *pTarget))
-                return RETURN_CONTINUE;
-            else if (KICK > 0 && m_ai->CastSpell(KICK, *pTarget))
+            if ((KIDNEY_SHOT > 0 && m_bot->GetComboPoints() >= 2 && m_ai->CastSpell(KIDNEY_SHOT, *pTarget) == SPELL_CAST_OK) ||
+                (KICK > 0 && m_ai->CastSpell(KICK, *pTarget) == SPELL_CAST_OK))
                 return RETURN_CONTINUE;
         // break; // No action? Go combat!
 
@@ -395,26 +398,26 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVP(Unit* pTarget)
                 switch (pTarget->getClass())
                 {
                     case CLASS_SHAMAN:
-                        if (KIDNEY_SHOT > 0 && m_ai->CastSpell(KIDNEY_SHOT, *pTarget)) // 25 energy (checked above)
+                        if (KIDNEY_SHOT > 0 && m_ai->CastSpell(KIDNEY_SHOT, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
                             return RETURN_CONTINUE;
                         break;
 
                     case CLASS_WARLOCK:
                     case CLASS_HUNTER:
-                        if (SLICE_DICE > 0 && m_ai->CastSpell(SLICE_DICE, *pTarget)) // 25 energy (checked above)
+                        if (SLICE_DICE > 0 && m_ai->CastSpell(SLICE_DICE, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
                             return RETURN_CONTINUE;
                         break;
 
                     case CLASS_WARRIOR:
                     case CLASS_PALADIN:
-                        if (EXPOSE_ARMOR > 0 && !pTarget->HasAura(EXPOSE_ARMOR, EFFECT_INDEX_0) && m_ai->CastSpell(EXPOSE_ARMOR, *pTarget)) // 25 energy (checked above)
+                        if (EXPOSE_ARMOR > 0 && !pTarget->HasAura(EXPOSE_ARMOR, EFFECT_INDEX_0) && m_ai->CastSpell(EXPOSE_ARMOR, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
                             return RETURN_CONTINUE;
                         break;
 
 
                     case CLASS_MAGE:
                     case CLASS_PRIEST:
-                        if (RUPTURE > 0 && m_ai->CastSpell(RUPTURE, *pTarget)) // 25 energy (checked above)
+                        if (RUPTURE > 0 && m_ai->CastSpell(RUPTURE, *pTarget) == SPELL_CAST_OK) // 25 energy (checked above)
                             return RETURN_CONTINUE;
                         break;
 
@@ -428,39 +431,39 @@ CombatManeuverReturns PlayerbotRogueAI::DoNextCombatManeuverPVP(Unit* pTarget)
                 // wait for energy
                 if (m_ai->GetEnergyAmount() < 35 && EVISCERATE)
                     return RETURN_NO_ACTION_OK;
-                if (EVISCERATE > 0 && m_ai->CastSpell(EVISCERATE, *pTarget))
+                if (EVISCERATE > 0 && m_ai->CastSpell(EVISCERATE, *pTarget) == SPELL_CAST_OK)
                     return RETURN_CONTINUE;
 
                 // failed for some (non-energy related) reason, fall through to normal attacks to maximize DPS
             }
 
-            if (CHEAP_SHOT > 0 && !pTarget->HasAura(CHEAP_SHOT, EFFECT_INDEX_0) && m_ai->CastSpell(CHEAP_SHOT, *pTarget))
+            if (CHEAP_SHOT > 0 && !pTarget->HasAura(CHEAP_SHOT, EFFECT_INDEX_0) && m_ai->CastSpell(CHEAP_SHOT, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (AMBUSH > 0 && m_ai->CastSpell(AMBUSH, *pTarget))
+            if (AMBUSH > 0 && m_ai->CastSpell(AMBUSH, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (GARROTE > 0 && m_ai->CastSpell(GARROTE, *pTarget))
+            if (GARROTE > 0 && m_ai->CastSpell(GARROTE, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (BACKSTAB > 0 && pTarget->isInBackInMap(m_bot, 1) && m_ai->CastSpell(BACKSTAB, *pTarget))
+            if (BACKSTAB > 0 && pTarget->isInBackInMap(m_bot, 1) && m_ai->CastSpell(BACKSTAB, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (SINISTER_STRIKE > 0 && m_ai->CastSpell(SINISTER_STRIKE, *pTarget))
+            if (SINISTER_STRIKE > 0 && m_ai->CastSpell(SINISTER_STRIKE, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (GHOSTLY_STRIKE > 0 && m_ai->CastSpell(GHOSTLY_STRIKE, *pTarget))
+            if (GHOSTLY_STRIKE > 0 && m_ai->CastSpell(GHOSTLY_STRIKE, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (HEMORRHAGE > 0 && m_ai->CastSpell(HEMORRHAGE, *pTarget))
+            if (HEMORRHAGE > 0 && m_ai->CastSpell(HEMORRHAGE, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (SHADOWSTEP > 0 && m_ai->CastSpell(SHADOWSTEP, *pTarget))
+            if (SHADOWSTEP > 0 && m_ai->CastSpell(SHADOWSTEP, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (m_bot->getRace() == RACE_BLOODELF && !pTarget->HasAura(ARCANE_TORRENT, EFFECT_INDEX_0) && m_ai->CastSpell(ARCANE_TORRENT, *pTarget))
+            if (m_bot->getRace() == RACE_BLOODELF && !pTarget->HasAura(ARCANE_TORRENT, EFFECT_INDEX_0) && m_ai->CastSpell(ARCANE_TORRENT, *pTarget) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            if (m_bot->getRace() == RACE_UNDEAD && (m_bot->HasAuraType(SPELL_AURA_MOD_FEAR) || m_bot->HasAuraType(SPELL_AURA_MOD_CHARM)) && m_ai->CastSpell(WILL_OF_THE_FORSAKEN, *m_bot))
+            if (m_bot->getRace() == RACE_UNDEAD && (m_bot->HasAuraType(SPELL_AURA_MOD_FEAR) || m_bot->HasAuraType(SPELL_AURA_MOD_CHARM)) && m_ai->CastSpell(WILL_OF_THE_FORSAKEN, *m_bot) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
 //            if (m_bot->getRace() == RACE_DWARF && m_bot->HasAuraState(AURA_STATE_DEADLY_POISON) && m_ai->CastSpell(STONEFORM, *m_bot))
 //                return RETURN_CONTINUE;
-            if (m_bot->getRace() == RACE_GNOME && (m_bot->hasUnitState(UNIT_STAT_STUNNED) || m_bot->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED)) && m_ai->CastSpell(ESCAPE_ARTIST, *m_bot))
+            if (m_bot->getRace() == RACE_GNOME && (m_bot->hasUnitState(UNIT_STAT_STUNNED | UNIT_STAT_ROOT) || m_bot->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED)) && m_ai->CastSpell(ESCAPE_ARTIST, *m_bot) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            else if (m_bot->getRace() == RACE_ORC && !m_bot->HasAura(BLOOD_FURY, EFFECT_INDEX_0) && m_ai->CastSpell(BLOOD_FURY, *m_bot))
+            else if (m_bot->getRace() == RACE_ORC && !m_bot->HasAura(BLOOD_FURY, EFFECT_INDEX_0) && m_ai->CastSpell(BLOOD_FURY, *m_bot) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
-            else if (m_bot->getRace() == RACE_TROLL && !m_bot->HasAura(BERSERKING, EFFECT_INDEX_0) && m_ai->CastSpell(BERSERKING, *m_bot))
+            else if (m_bot->getRace() == RACE_TROLL && !m_bot->HasAura(BERSERKING, EFFECT_INDEX_0) && m_ai->CastSpell(BERSERKING, *m_bot) == SPELL_CAST_OK)
                 return RETURN_CONTINUE;
 
             break;
@@ -478,9 +481,9 @@ static const uint32 uPriorizedPoisonIds[4] =
 Item* PlayerbotRogueAI::FindPoison() const
 {
     Item* poison;
-    for (uint8 i = 0; i < countof(uPriorizedPoisonIds); ++i)
+    for (unsigned int priorizedPoisonId : uPriorizedPoisonIds)
     {
-        poison = m_ai->FindConsumable(uPriorizedPoisonIds[i]);
+        poison = m_ai->FindConsumable(priorizedPoisonId);
         if (poison)
             return poison;
     }
@@ -544,6 +547,10 @@ void PlayerbotRogueAI::DoNonCombatActions()
     }
 
     // Nothing else to do, Night Elves will cast Shadowmeld to reduce their aggro versus patrols or nearby mobs
-    if (SHADOWMELD && !m_bot->HasAura(SHADOWMELD, EFFECT_INDEX_0) && m_ai->CastSpell(SHADOWMELD, *m_bot))
-        return;
+    if (SHADOWMELD > 0 && !m_bot->isMovingOrTurning()
+        && !m_bot->IsMounted()
+        && !m_bot->HasAura(SHADOWMELD, EFFECT_INDEX_0))
+    {
+        m_ai->CastSpell(SHADOWMELD, *m_bot);
+    }
 } // end DoNonCombatActions

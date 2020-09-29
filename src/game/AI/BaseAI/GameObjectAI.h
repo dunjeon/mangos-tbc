@@ -19,6 +19,7 @@
 #define DEF_GAMEOBJECT_AI_H
 
 #include "Platform/Define.h"
+#include "AI/BaseAI/AIDefines.h"
 
 class GameObject;
 
@@ -49,6 +50,21 @@ class GameObjectAI
         * No params as LootState to which the GO is changed to is accessible in the GameObjectAI through GetLootState()
         */
         virtual void OnLootStateChange() {}
+
+        /*
+        * Called when a GO appears in the world to normal observers
+        */
+        virtual void JustSpawned() {}
+
+        /*
+        * Called when a GO disappears from the world to normal observers
+        */
+        virtual void JustDespawned() {}
+
+        /*
+        * Enables generic receiving of events
+        */
+        virtual void ReceiveAIEvent(AIEventType /*eventType*/, uint32 /*miscValue*/ = 0) {}
 
     protected:
         GameObject* m_go;

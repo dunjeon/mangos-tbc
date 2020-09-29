@@ -71,6 +71,8 @@ enum
 
     SPELL_SUMMON_AVATAR   = 12639,                          // Cast by the shade of hakkar, updates entry to avatar
     SPELL_AVATAR_SUMMONED = 12948,
+    
+    SPELL_SPIRIT_SPAWN_IN = 17321,
 
     SAY_JAMMALAN_INTRO    = -1109005,
     SAY_AVATAR_BRAZIER_1  = -1109006,
@@ -119,7 +121,7 @@ class instance_sunken_temple : public ScriptedInstance
         void SetData(uint32 uiType, uint32 uiData) override;
         uint32 GetData(uint32 uiType) const override;
 
-        void Update(uint32 uiDiff) override;
+        void Update(const uint32 diff) override;
 
         bool ProcessStatueEvent(uint32 uiEventId);
 

@@ -82,7 +82,7 @@ int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster)
         int32 maxduration = GetSpellMaxDuration(spellInfo);
 
         if (duration != maxduration && caster->GetTypeId() == TYPEID_PLAYER)
-            duration += int32((maxduration - duration) * ((Player*)caster)->GetComboPoints() / 5);
+            duration += int32((maxduration - duration) * caster->GetComboPoints() / 5);
 
         if (Player* modOwner = caster->GetSpellModOwner())
         {
@@ -99,14 +99,14 @@ int32 CalculateSpellDuration(SpellEntry const* spellInfo, Unit const* caster)
     return duration;
 }
 
-uint32 GetSpellCastTime(SpellEntry const* spellInfo, Spell const* spell)
+uint32 GetSpellCastTime(SpellEntry const* spellInfo, WorldObject* caster, Spell* spell)
 {
     if (spell)
     {
         // Workaround for custom cast time
         switch (spellInfo->Id)
         {
-            case 3366:  // Opening - seems to have a settable timer per usage
+            case 3366: // Opening - seems to have a settable timer per usage
                 if (spell->m_CastItem)
                 {
                     switch (spell->m_CastItem->GetEntry())
@@ -142,7 +142,9 @@ uint32 GetSpellCastTime(SpellEntry const* spellInfo, Spell const* spell)
     if (!spellCastTimeEntry)
         return 0;
 
-    int32 castTime = spellCastTimeEntry->CastTime;
+    int32 spellRank = caster && caster->GetTypeId() != TYPEID_GAMEOBJECT ? static_cast<Unit*>(caster)->GetSpellRank(spellInfo) : 0;
+    int32 castTime = spellCastTimeEntry->CastTime + spellCastTimeEntry->CastTimePerLevel * (spellRank / 5 - spellInfo->baseLevel);
+    castTime = std::max(castTime, spellCastTimeEntry->MinCastTime);
 
     // Hunter Ranged spells need cast time + 0.5s to reflect tooltips, excluding Auto Shot
     if (spellInfo->HasAttribute(SPELL_ATTR_RANGED) && (!spell || !spell->IsAutoRepeat()))
@@ -164,7 +166,7 @@ uint32 GetSpellCastTime(SpellEntry const* spellInfo, Spell const* spell)
 
 uint32 GetSpellCastTimeForBonus(SpellEntry const* spellProto, DamageEffectType damagetype)
 {
-    uint32 CastingTime = (!IsChanneledSpell(spellProto)) || spellProto->HasAttribute(SPELL_ATTR_EX5_HASTE_AFFECT_DURATION) ? GetSpellCastTime(spellProto) : GetSpellDuration(spellProto);
+    uint32 CastingTime = (!IsChanneledSpell(spellProto)) || spellProto->HasAttribute(SPELL_ATTR_EX5_HASTE_AFFECT_DURATION) ? GetSpellCastTime(spellProto, nullptr) : GetSpellDuration(spellProto);
 
     if (CastingTime > 7000) CastingTime = 7000;
     if (CastingTime < 1500) CastingTime = 1500;
@@ -228,7 +230,7 @@ uint32 GetSpellCastTimeForBonus(SpellEntry const* spellProto, DamageEffectType d
     if (overTime > 0 && CastingTime > 0 && DirectDamage)
     {
         // mainly for DoTs which are 3500 here otherwise
-        uint32 OriginalCastTime = GetSpellCastTime(spellProto);
+        uint32 OriginalCastTime = GetSpellCastTime(spellProto, nullptr);
         if (OriginalCastTime > 7000) OriginalCastTime = 7000;
         if (OriginalCastTime < 1500) OriginalCastTime = 1500;
         // Portion to Over Time
@@ -335,7 +337,6 @@ WeaponAttackType GetWeaponAttackType(SpellEntry const* spellInfo)
         case SPELL_DAMAGE_CLASS_RANGED:
             return RANGED_ATTACK;
         default:
-            // Wands
         {
             // Wands
             if (spellInfo->HasAttribute(SPELL_ATTR_EX2_AUTOREPEAT_FLAG))
@@ -377,6 +378,10 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
             if (spellInfo->IsFitToFamilyMask(uint64(0x12040000)))
                 return SPELL_MAGE_ARMOR;
 
+            // Pre-Wrath Arcane Power (no mask):
+            if (spellInfo->Id == 12042)
+                return SPELL_BUFF_CASTER_POWER;
+
             break;
         }
         case SPELLFAMILY_WARRIOR:
@@ -396,13 +401,17 @@ SpellSpecific GetSpellSpecific(uint32 spellId)
             if (spellInfo->IsFitToFamilyMask(uint64(0x0000002000000000)))
                 return SPELL_WARLOCK_ARMOR;
 
-            // Drain Soul and Shadowburn
-            if (IsSpellHaveAura(spellInfo, SPELL_AURA_CHANNEL_DEATH_ITEM))
-                return SPELL_SOUL_CAPTURE;
-
             // Corruption and Seed of Corruption
             if (spellInfo->IsFitToFamilyMask(uint64(0x1000000002)))
                 return SPELL_CORRUPTION;
+
+            break;
+        }
+        case SPELLFAMILY_PRIEST:
+        {
+            // Power Infusion:
+            if (spellInfo->Id == 10060)
+                return SPELL_BUFF_CASTER_POWER;
 
             break;
         }
@@ -1301,32 +1310,6 @@ void SpellMgr::LoadSpellThreats()
     sLog.outString();
 }
 
-bool SpellMgr::IsNoStackSpellDueToSpell(SpellEntry const* spellInfo_1, SpellEntry const* spellInfo_2) const
-{
-    if (!spellInfo_1 || !spellInfo_2)
-        return false;
-
-    // Uncancellable spells are expected to be persistent at all times
-    if (spellInfo_1->HasAttribute(SPELL_ATTR_CANT_CANCEL) || spellInfo_2->HasAttribute(SPELL_ATTR_CANT_CANCEL))
-        return false;
-
-    // Allow stack passive and not passive spells
-    if (spellInfo_1->HasAttribute(SPELL_ATTR_PASSIVE) != spellInfo_2->HasAttribute(SPELL_ATTR_PASSIVE))
-        return false;
-
-    // Special case for potions
-    if (spellInfo_1->SpellFamilyName == SPELLFAMILY_POTION || spellInfo_2->SpellFamilyName == SPELLFAMILY_POTION)
-        return false;
-
-    if (IsSpellAnotherRankOfSpell(spellInfo_1->Id, spellInfo_2->Id))
-        return true;
-
-    if (IsStackableSpell(spellInfo_1, spellInfo_2))
-        return false;
-
-    return true;
-}
-
 bool SpellMgr::IsSpellCanAffectSpell(SpellEntry const* spellInfo_1, SpellEntry const* spellInfo_2) const
 {
     for (int i = 0; i < MAX_EFFECT_INDEX; ++i)
@@ -1431,21 +1414,25 @@ SpellEntry const* SpellMgr::SelectAuraRankForLevel(SpellEntry const* spellInfo, 
     if (!needRankSelection || GetSpellRank(spellInfo->Id) == 0)
         return spellInfo;
 
-    for (uint32 nextSpellId = spellInfo->Id; nextSpellId != 0; nextSpellId = GetPrevSpellInChain(nextSpellId))
+    // Check for lower rank of same spell if config is set to auto downrank
+    if (sWorld.getConfig(CONFIG_BOOL_AUTO_DOWNRANK))
     {
-        SpellEntry const* nextSpellInfo = sSpellTemplate.LookupEntry<SpellEntry>(nextSpellId);
-        if (!nextSpellInfo)
-            break;
+        for (uint32 nextSpellId = spellInfo->Id; nextSpellId != 0; nextSpellId = GetPrevSpellInChain(nextSpellId))
+        {
+            SpellEntry const* nextSpellInfo = sSpellTemplate.LookupEntry<SpellEntry>(nextSpellId);
+            if (!nextSpellInfo)
+                break;
 
-        // if found appropriate level
+            // if found appropriate level
         // partial Playerbot mod: fix for core bug (commit 073cdd0e...)
-        if (level + 10 >= nextSpellInfo->spellLevel)
-            return nextSpellInfo;
+            if (level + 10 >= nextSpellInfo->spellLevel)
+                return nextSpellInfo;
 
-        // one rank less then
+            // one rank less then
+        }
     }
 
-    // not found
+    // Recipient is too low level
     return nullptr;
 }
 
@@ -1636,7 +1623,7 @@ void SpellMgr::LoadSpellChains()
     }
 
     // load custom case
-    QueryResult* result = WorldDatabase.Query("SELECT spell_id, prev_spell, first_spell, rank, req_spell FROM spell_chain");
+    QueryResult* result = WorldDatabase.Query("SELECT spell_id, prev_spell, first_spell, `rank`, req_spell FROM spell_chain");
     if (!result)
     {
         BarGoLink bar(1);
@@ -2375,7 +2362,7 @@ void SpellMgr::LoadSpellAreas()
             continue;
         }
 
-        if (spellArea.conditionId && !sConditionStorage.LookupEntry<PlayerCondition>(spellArea.conditionId))
+        if (spellArea.conditionId && !sConditionStorage.LookupEntry<ConditionEntry>(spellArea.conditionId))
         {
             sLog.outErrorDb("Spell %u listed in `spell_area` have wrong conditionId (%u) requirement", spell, spellArea.conditionId);
             continue;
@@ -2576,10 +2563,6 @@ SpellCastResult SpellMgr::GetSpellAllowedInLocationError(SpellEntry const* spell
             return map_id == 566 && player && player->InBattleGround() ? SPELL_CAST_OK : SPELL_FAILED_REQUIRES_AREA;
         case 2584:                                          // Waiting to Resurrect
         case 42792:                                         // Recently Dropped Flag
-        case 43681:                                         // Inactive
-        {
-            return player && player->InBattleGround() ? SPELL_CAST_OK : SPELL_FAILED_ONLY_BATTLEGROUNDS;
-        }
         case 22011:                                         // Spirit Heal Channel
         case 22012:                                         // Spirit Heal
         case 24171:                                         // Resurrection Impact Visual
@@ -2739,7 +2722,7 @@ void SpellMgr::CheckUsedSpells(char const* table) const
             continue;
         }
 
-        if (effectType < -1 || effectType >= TOTAL_SPELL_EFFECTS)
+        if (effectType < -1 || effectType >= MAX_SPELL_EFFECTS)
         {
             sLog.outError("Table '%s' for spell %u have wrong SpellEffect type value(%u), skipped.", table, spell, effectType);
             continue;
@@ -3028,6 +3011,17 @@ bool IsDiminishingReturnsGroupDurationLimited(DiminishingGroup group)
     }
 }
 
+bool IsDiminishingReturnsGroupDurationDiminished(DiminishingGroup group, bool pvp)
+{
+    switch (group)
+    {
+        case DIMINISHING_CHARM:
+            return pvp;
+        default:
+            return true;
+    }
+}
+
 DiminishingReturnsType GetDiminishingReturnsGroupType(DiminishingGroup group)
 {
     switch (group)
@@ -3036,12 +3030,12 @@ DiminishingReturnsType GetDiminishingReturnsGroupType(DiminishingGroup group)
         case DIMINISHING_CONTROL_STUN:
         case DIMINISHING_TRIGGER_STUN:
         case DIMINISHING_KIDNEYSHOT:
+        case DIMINISHING_CHARM:
             return DRTYPE_ALL;
         case DIMINISHING_SLEEP:
         case DIMINISHING_CONTROL_ROOT:
         case DIMINISHING_TRIGGER_ROOT:
         case DIMINISHING_FEAR:
-        case DIMINISHING_CHARM:
         case DIMINISHING_POLYMORPH_KNOCKOUT:
         case DIMINISHING_SILENCE:
         case DIMINISHING_DISARM:
@@ -3071,7 +3065,7 @@ bool SpellArea::IsFitToRequirements(Player const* player, uint32 newZone, uint32
 {
     if (conditionId)
     {
-        if (!player || !sObjectMgr.IsPlayerMeetToCondition(conditionId, player, player->GetMap(), nullptr, CONDITION_FROM_SPELL_AREA))
+        if (!player || !sObjectMgr.IsConditionSatisfied(conditionId, player, player->GetMap(), nullptr, CONDITION_FROM_SPELL_AREA))
             return false;
     }
     else                                                    // This block will be removed

@@ -23,6 +23,7 @@
 
 #include <string>
 #include <vector>
+#include <random>
 
 typedef std::vector<std::string> Tokens;
 
@@ -41,6 +42,8 @@ inline uint32 secsToTimeBitFields(time_t secs)
     tm* lt = localtime(&secs);
     return (lt->tm_year - 100) << 24 | lt->tm_mon  << 20 | (lt->tm_mday - 1) << 14 | lt->tm_wday << 11 | lt->tm_hour << 6 | lt->tm_min;
 }
+
+std::mt19937* GetRandomGenerator();
 
 /* Return a random number in the range min..max; (max-min) must be smaller than 32768. */
 int32 irand(int32 min, int32 max);
@@ -148,19 +151,13 @@ inline void ApplyPercentModFloatVar(float& var, float val, bool apply)
     var *= (apply ? (100.0f + val) / 100.0f : 100.0f / (100.0f + val));
 }
 
-bool Utf8toWStr(const std::string& utf8str, std::wstring& wstr);
+bool Utf8toWStr(const std::string& utf8str, std::wstring& wstr, size_t max_len = 0);
 // in wsize==max size of buffer, out wsize==real string size
-bool Utf8toWStr(char const* utf8str, size_t csize, wchar_t* wstr, size_t& wsize);
-inline bool Utf8toWStr(const std::string& utf8str, wchar_t* wstr, size_t& wsize)
-{
-    return Utf8toWStr(utf8str.c_str(), utf8str.size(), wstr, wsize);
-}
 
 bool WStrToUtf8(const std::wstring& wstr, std::string& utf8str);
-// size==real string size
-bool WStrToUtf8(wchar_t* wstr, size_t size, std::string& utf8str);
 
-size_t utf8length(std::string& utf8str);                    // set string to "" if invalid utf8 sequence
+size_t utf8length(std::string& utf8str);                    // returns string's length in utf8 chars, sets string to "" on invalid utf8 sequence
+size_t utf8limit(std::string& utf8str, size_t bytes);       // returns string's new size in bytes, sets string to "" on invalid utf8 sequence
 void utf8truncate(std::string& utf8str, size_t len);
 
 inline bool isBasicLatinCharacter(wchar_t wchar)
@@ -385,4 +382,12 @@ bool IsIPAddress(char const* ipaddress);
 uint32 CreatePIDFile(const std::string& filename);
 
 void hexEncodeByteArray(uint8* bytes, uint32 arrayLen, std::string& result);
+
+template<typename E>
+constexpr typename std::underlying_type<E>::type AsUnderlyingType(E enumValue)
+{
+    static_assert(std::is_enum<E>::value, "AsUnderlyingType can only be used with enums");
+    return static_cast<typename std::underlying_type<E>::type>(enumValue);
+}
+
 #endif

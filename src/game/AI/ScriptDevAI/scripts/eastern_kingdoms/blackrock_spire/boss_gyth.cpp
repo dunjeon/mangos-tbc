@@ -21,7 +21,7 @@ SDComment: Timers may need adjustments
 SDCategory: Blackrock Spire
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "blackrock_spire.h"
 
 enum
@@ -64,7 +64,7 @@ struct boss_gythAI : public ScriptedAI
         uiKnockAwayTimer     = 23000;
         m_bSummonedRend      = false;
         m_bHasChromaticChaos = false;
-
+        SetDeathPrevention(true);
         DoCastSpellIfCan(m_creature, SPELL_REND_MOUNTS);
     }
 
@@ -76,7 +76,7 @@ struct boss_gythAI : public ScriptedAI
     void UpdateAI(const uint32 uiDiff) override
     {
         // Return since we have no target
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         // Chromatic Chaos at 50%
@@ -122,7 +122,7 @@ struct boss_gythAI : public ScriptedAI
 
         if (uiKnockAwayTimer < uiDiff)
         {
-            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_KNOCK_AWAY) == CAST_OK)
+            if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_KNOCK_AWAY) == CAST_OK)
                 uiKnockAwayTimer = 23000;
         }
         else
@@ -133,6 +133,7 @@ struct boss_gythAI : public ScriptedAI
         {
             if (DoCastSpellIfCan(m_creature, SPELL_SUMMON_REND) == CAST_OK)
             {
+                SetDeathPrevention(false);
                 m_creature->RemoveAurasDueToSpell(SPELL_REND_MOUNTS);
                 m_bSummonedRend = true;
             }

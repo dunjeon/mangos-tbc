@@ -583,6 +583,9 @@ void BattleGround::CastSpellOnTeam(uint32 SpellID, Team teamId)
 
 void BattleGround::RewardHonorToTeam(uint32 Honor, Team teamId)
 {
+    if (teamId == TEAM_NONE)
+        return;
+
     for (BattleGroundPlayerMap::const_iterator itr = m_Players.begin(); itr != m_Players.end(); ++itr)
     {
         if (itr->second.OfflineRemoveTime)
@@ -763,7 +766,7 @@ void BattleGround::EndBattleGround(Team winner)
         if (plr->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION))
             plr->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
 
-        if (!plr->isAlive())
+        if (!plr->IsAlive())
         {
             plr->ResurrectPlayer(1.0f);
             plr->SpawnCorpseBones();
@@ -1040,7 +1043,7 @@ void BattleGround::RemovePlayerAtLeave(ObjectGuid guid, bool Transport, bool Sen
 
         plr->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
-        if (!plr->isAlive())                                // resurrect on exit
+        if (!plr->IsAlive())                                // resurrect on exit
         {
             plr->ResurrectPlayer(1.0f);
             plr->SpawnCorpseBones();
@@ -1191,7 +1194,7 @@ void BattleGround::StartBattleGround()
 void BattleGround::AddPlayer(Player* plr)
 {
     // remove afk from player
-    if (plr->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_AFK))
+    if (plr->isAFK())
         plr->ToggleAFK();
 
     // score struct must be created in inherited class
@@ -1550,14 +1553,13 @@ void BattleGround::SpawnBGObject(ObjectGuid guid, uint32 respawntime)
         // we need to change state from GO_JUST_DEACTIVATED to GO_READY in case battleground is starting again
         if (obj->GetLootState() == GO_JUST_DEACTIVATED)
             obj->SetLootState(GO_READY);
-        obj->SetRespawnTime(0);
-        map->Add(obj);
+        obj->Respawn();
     }
     else
     {
-        map->Add(obj);
-        obj->SetRespawnTime(respawntime);
         obj->SetLootState(GO_JUST_DEACTIVATED);
+        obj->SetRespawnDelay(respawntime);
+        obj->SetForcedDespawn();
     }
 }
 
@@ -1718,7 +1720,7 @@ uint32 BattleGround::GetAlivePlayersCountByTeam(Team team) const
         if (m_Player.second.PlayerTeam == team)
         {
             Player* pl = sObjectMgr.GetPlayer(m_Player.first);
-            if (pl && pl->isAlive())
+            if (pl && pl->IsAlive())
                 ++count;
         }
     }

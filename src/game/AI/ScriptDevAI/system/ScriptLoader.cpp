@@ -2,7 +2,7 @@
 * This program is free software licensed under GPL version 2
 * Please see the included DOCS/LICENSE.TXT for more information */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 
 // battlegrounds
 extern void AddSC_battleground();
@@ -27,6 +27,8 @@ extern void AddSC_npcs_special();
 extern void AddSC_quests_scripts();
 extern void AddSC_spell_scripts();
 extern void AddSC_world_map_scripts();
+extern void AddSC_boss_highlord_kruul();
+extern void AddSC_war_effort();
 
 // eastern kingdoms
 extern void AddSC_blackrock_depths();                       // blackrock_depths
@@ -180,6 +182,7 @@ extern void AddSC_undercity();
 extern void AddSC_western_plaguelands();
 extern void AddSC_westfall();
 extern void AddSC_wetlands();
+extern void AddSC_world_eastern_kingdoms();
 
 // kalimdor
 extern void AddSC_instance_blackfathom_deeps();             // blackfathom_deeps
@@ -190,6 +193,10 @@ extern void AddSC_dark_portal();
 extern void AddSC_instance_dark_portal();
 extern void AddSC_hyjal();                                  // COT, hyjal
 extern void AddSC_boss_archimonde();
+extern void AddSC_boss_anetheron();
+extern void AddSC_boss_azgalor();
+extern void AddSC_boss_kazrogal();
+extern void AddSC_boss_rage_winterchill();
 extern void AddSC_instance_mount_hyjal();
 extern void AddSC_instance_old_hillsbrad();                 // COT, old_hillsbrad
 extern void AddSC_old_hillsbrad();
@@ -250,6 +257,7 @@ extern void AddSC_thousand_needles();
 extern void AddSC_thunder_bluff();
 extern void AddSC_ungoro_crater();
 extern void AddSC_winterspring();
+extern void AddSC_world_kalimdor();
 
 // northrend
 // removed
@@ -295,6 +303,8 @@ extern void AddSC_boss_mekgineer_steamrigger();
 extern void AddSC_boss_warlord_kalithresh();
 extern void AddSC_instance_steam_vault();
 extern void AddSC_boss_hungarfen();                         // CR, Underbog
+extern void AddSC_boss_swamplord_muselek();
+extern void AddSC_boss_black_stalker();
 extern void AddSC_instance_underbog();
 extern void AddSC_boss_gruul();                             // gruuls_lair
 extern void AddSC_boss_high_king_maulgar();
@@ -342,6 +352,7 @@ extern void AddSC_shadowmoon_valley();
 extern void AddSC_shattrath_city();
 extern void AddSC_terokkar_forest();
 extern void AddSC_boss_terokk();
+extern void AddSC_OutlandWorldScript();
 extern void AddSC_zangarmarsh();
 
 void AddScripts()
@@ -369,6 +380,8 @@ void AddScripts()
     AddSC_quests_scripts();
     AddSC_spell_scripts();
     AddSC_world_map_scripts();
+    AddSC_boss_highlord_kruul();
+    AddSC_war_effort();
 
     // eastern kingdoms
     AddSC_blackrock_depths();                               // blackrock_depths
@@ -522,6 +535,7 @@ void AddScripts()
     AddSC_western_plaguelands();
     AddSC_westfall();
     AddSC_wetlands();
+    AddSC_world_eastern_kingdoms();
 
     // kalimdor
     AddSC_instance_blackfathom_deeps();                     // blackfathom deeps
@@ -532,6 +546,10 @@ void AddScripts()
     AddSC_instance_dark_portal();
     AddSC_hyjal();                                          // CoT, hyjal
     AddSC_boss_archimonde();
+    AddSC_boss_anetheron();
+    AddSC_boss_azgalor();
+    AddSC_boss_kazrogal();
+    AddSC_boss_rage_winterchill();
     AddSC_instance_mount_hyjal();
     AddSC_instance_old_hillsbrad();                         // CoT, old_hillsbrand
     AddSC_old_hillsbrad();
@@ -592,6 +610,7 @@ void AddScripts()
     AddSC_thunder_bluff();
     AddSC_ungoro_crater();
     AddSC_winterspring();
+    AddSC_world_kalimdor();
 
     // northrend
     // removed
@@ -637,6 +656,8 @@ void AddScripts()
     AddSC_boss_warlord_kalithresh();
     AddSC_instance_steam_vault();
     AddSC_boss_hungarfen();                                 // CR, Underbog
+    AddSC_boss_swamplord_muselek();
+    AddSC_boss_black_stalker();
     AddSC_instance_underbog();
     AddSC_boss_gruul();                                     // gruuls_lair
     AddSC_boss_high_king_maulgar();
@@ -684,5 +705,6 @@ void AddScripts()
     AddSC_shattrath_city();
     AddSC_terokkar_forest();
     AddSC_boss_terokk();
+    AddSC_OutlandWorldScript();
     AddSC_zangarmarsh();
 }

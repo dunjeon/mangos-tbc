@@ -30,6 +30,7 @@
 #include "../../Loot/LootMgr.h"
 #include "../../MotionGenerators/WaypointMovementGenerator.h"
 #include "../../Tools/Language.h"
+#include "../../World/World.h"
 
 class LoginQueryHolder;
 class CharacterHandler;
@@ -79,10 +80,10 @@ PlayerbotMgr::PlayerbotMgr(Player* const master) : m_master(master)
 
 PlayerbotMgr::~PlayerbotMgr()
 {
-    LogoutAllBots();
+    LogoutAllBots(true);
 }
 
-void PlayerbotMgr::UpdateAI(const uint32 p_time) {}
+void PlayerbotMgr::UpdateAI(const uint32 /*diff*/) {}
 
 void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
 {
@@ -274,12 +275,6 @@ void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
                 }
                 {
                 std::ostringstream out;
-                out << "m_TimeDoneEating: " << pBot->m_TimeDoneEating
-                << " m_TimeDoneDrinking: " << pBot->m_TimeDoneDrinking;
-                ch.SendSysMessage(out.str().c_str());
-                }
-                {
-                std::ostringstream out;
                 out << "m_CurrentlyCastingSpellId: " << pBot->m_CurrentlyCastingSpellId;
                 ch.SendSysMessage(out.str().c_str());
                 }
@@ -380,10 +375,11 @@ void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
 
                 // If player and bot are on different maps: then player was teleported by GameObject
                 // let's return and let playerbot summon do its job by teleporting bots
-                if (bot->GetMap() != m_master->GetMap())
+                Map* masterMap = m_master->IsInWorld() ? m_master->GetMap() : nullptr;
+                if (!masterMap || bot->GetMap() != masterMap || m_master->IsBeingTeleported())
                     return;
 
-                GameObject* obj = m_master->GetMap()->GetGameObject(objGUID);
+                GameObject* obj = masterMap->GetGameObject(objGUID);
                 if (!obj)
                     return;
 
@@ -734,7 +730,7 @@ void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
     }
 }
 
-void PlayerbotMgr::HandleMasterOutgoingPacket(const WorldPacket& packet)
+void PlayerbotMgr::HandleMasterOutgoingPacket(const WorldPacket& /*packet*/)
 {
     /*
     switch (packet.GetOpcode())
@@ -765,19 +761,31 @@ void PlayerbotMgr::HandleMasterOutgoingPacket(const WorldPacket& packet)
     */
 }
 
-void PlayerbotMgr::LogoutAllBots()
+void PlayerbotMgr::RemoveBots()
 {
-    while (true)
+    for (auto& guid : m_botToRemove)
     {
-        PlayerBotMap::const_iterator itr = GetPlayerBotsBegin();
-        if (itr == GetPlayerBotsEnd()) break;
-        Player* bot = itr->second;
-        LogoutPlayerBot(bot->GetObjectGuid());
+        Player* bot = GetPlayerBot(guid);
+        if (bot)
+        {
+            WorldSession* botWorldSessionPtr = bot->GetSession();
+            m_playerBots.erase(guid);                               // deletes bot player ptr inside this WorldSession PlayerBotMap
+            botWorldSessionPtr->LogoutPlayer();                     // this will delete the bot Player object and PlayerbotAI object
+            delete botWorldSessionPtr;                              // finally delete the bot's WorldSession
+        }
     }
-    RemoveAllBotsFromGroup();
+
+    m_botToRemove.clear();
 }
 
+void PlayerbotMgr::LogoutAllBots(bool fullRemove /*= false*/)
+{
+    for (auto itr : m_playerBots)
+        m_botToRemove.insert(itr.first);
 
+    if (fullRemove)
+        RemoveBots();
+}
 
 void PlayerbotMgr::Stay()
 {
@@ -792,14 +800,7 @@ void PlayerbotMgr::Stay()
 // Playerbot mod: logs out a Playerbot.
 void PlayerbotMgr::LogoutPlayerBot(ObjectGuid guid)
 {
-    Player* bot = GetPlayerBot(guid);
-    if (bot)
-    {
-        WorldSession* botWorldSessionPtr = bot->GetSession();
-        m_playerBots.erase(guid);    // deletes bot player ptr inside this WorldSession PlayerBotMap
-        botWorldSessionPtr->LogoutPlayer(true); // this will delete the bot Player object and PlayerbotAI object
-        delete botWorldSessionPtr;  // finally delete the bot's WorldSession
-    }
+    m_botToRemove.insert(guid);
 }
 
 // Playerbot mod: Gets a player bot Player object for this WorldSession master
@@ -811,6 +812,15 @@ Player* PlayerbotMgr::GetPlayerBot(ObjectGuid playerGuid) const
 
 void PlayerbotMgr::OnBotLogin(Player* const bot)
 {
+    // simulate client taking control
+    WorldPacket* const pCMSG_SET_ACTIVE_MOVER = new WorldPacket(CMSG_SET_ACTIVE_MOVER, 8);
+    *pCMSG_SET_ACTIVE_MOVER << bot->GetObjectGuid();
+    bot->GetSession()->QueuePacket(std::move(std::unique_ptr<WorldPacket>(pCMSG_SET_ACTIVE_MOVER)));
+
+    WorldPacket* const pMSG_MOVE_FALL_LAND = new WorldPacket(MSG_MOVE_FALL_LAND, 28);
+    *pMSG_MOVE_FALL_LAND << bot->GetMover()->m_movementInfo;
+    bot->GetSession()->QueuePacket(std::move(std::unique_ptr<WorldPacket>(pMSG_MOVE_FALL_LAND)));
+
     // give the bot some AI, object is owned by the player class
     PlayerbotAI* ai = new PlayerbotAI(this, bot);
     bot->SetPlayerbotAI(ai);
@@ -1103,13 +1113,19 @@ bool ChatHandler::HandlePlayerbotCommand(char* args)
         delete resultchar;
     }
 
-    QueryResult* resultlvl = CharacterDatabase.PQuery("SELECT level,name FROM characters WHERE guid = '%u'", guid.GetCounter());
+    QueryResult* resultlvl = CharacterDatabase.PQuery("SELECT level, name, race FROM characters WHERE guid = '%u'", guid.GetCounter());
     if (resultlvl)
     {
         Field* fields = resultlvl->Fetch();
         int charlvl = fields[0].GetUInt32();
         int maxlvl = botConfig.GetIntDefault("PlayerbotAI.RestrictBotLevel", 80);
+        uint8 race = fields[2].GetUInt8();
+        uint32 team = 0;
+
+        team = Player::TeamForRace(race);
+
         if (!(m_session->GetSecurity() > SEC_PLAYER))
+        {
             if (charlvl > maxlvl)
             {
                 PSendSysMessage("|cffff0000You cannot summon |cffffffff[%s]|cffff0000, it's level is too high.(Current Max:lvl |cffffffff%u)", fields[1].GetString(), maxlvl);
@@ -1117,6 +1133,16 @@ bool ChatHandler::HandlePlayerbotCommand(char* args)
                 delete resultlvl;
                 return false;
             }
+
+            // Opposing team bot
+            if (!sWorld.getConfig(CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP) && m_session->GetPlayer()->GetTeam() != team)
+            {
+                PSendSysMessage("|cffff0000You cannot summon |cffffffff[%s]|cffff0000, a member of the enemy side", fields[1].GetString());
+                SetSentErrorMessage(true);
+                delete resultlvl;
+                return false;
+            }
+        }
         delete resultlvl;
     }
     // end of gmconfig patch

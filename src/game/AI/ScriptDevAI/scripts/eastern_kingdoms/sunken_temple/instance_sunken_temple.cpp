@@ -21,7 +21,7 @@ SDComment: Hakkar Summon Event needs more sources to improve
 SDCategory: Sunken Temple
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "sunken_temple.h"
 
 instance_sunken_temple::instance_sunken_temple(Map* pMap) : ScriptedInstance(pMap),
@@ -164,6 +164,10 @@ void instance_sunken_temple::SetData(uint32 uiType, uint32 uiData)
                     pEranikus->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER);
             }
             m_auiEncounter[uiType] = uiData;
+            break;
+        case TYPE_MALFURION:
+            if (uiData == IN_PROGRESS)
+                m_auiEncounter[uiType] = uiData;
             break;
         case TYPE_AVATAR:
             if (uiData == SPECIAL)

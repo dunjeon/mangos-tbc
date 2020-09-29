@@ -21,7 +21,7 @@ SDComment: May need some small adjustments
 SDCategory: Tempest Keep, The Mechanar
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "mechanar.h"
 #include "Entities/TemporarySpawn.h"
 
@@ -37,7 +37,7 @@ enum
 
     SPELL_SUMMON_RAGING_FLAMES      = 35275,
     SPELL_SUMMON_RAGING_FLAMES_H    = 39084,
-    SPELL_FROST_ATTACK              = 45195,
+    SPELL_FROST_ATTACK              = 45196, // serverside - triggers 45196
     SPELL_ARCANE_BLAST              = 35314,
     SPELL_DRAGONS_BREATH            = 35250,
 
@@ -50,6 +50,10 @@ struct boss_nethermancer_sepethreaAI : public ScriptedAI
     {
         m_pInstance = (ScriptedInstance*)pCreature->GetInstanceData();
         m_bIsRegularMode = pCreature->GetMap()->IsRegularDifficulty();
+        m_creature->GetCombatManager().SetLeashingCheck([&](Unit* /*unit*/, float x, float /*y*/, float /*z*/)->bool
+        {
+            return x < 266.0f;
+        });
         Reset();
     }
 
@@ -65,19 +69,10 @@ struct boss_nethermancer_sepethreaAI : public ScriptedAI
         m_uiDragonsBreathTimer  = urand(20000, 26000);
     }
 
-    // TODO: This is hack, need to find if there is an aura which procs this spell on melee hit
-    void DamageDeal(Unit* pDoneTo, uint32& uiDamage, DamageEffectType damagetype) override
-    {
-        if (damagetype != DIRECT_DAMAGE)
-            return;
-
-        if (roll_chance_i(25))
-            m_creature->CastSpell(pDoneTo, SPELL_FROST_ATTACK, TRIGGERED_OLD_TRIGGERED);
-    }
-
     void Aggro(Unit* /*pWho*/) override
     {
         DoScriptText(SAY_AGGRO, m_creature);
+        DoCastSpellIfCan(nullptr, SPELL_FROST_ATTACK, CAST_TRIGGERED | CAST_AURA_NOT_PRESENT);
         DoCastSpellIfCan(m_creature, m_bIsRegularMode ? SPELL_SUMMON_RAGING_FLAMES : SPELL_SUMMON_RAGING_FLAMES_H);
 
         if (m_pInstance)
@@ -106,16 +101,16 @@ struct boss_nethermancer_sepethreaAI : public ScriptedAI
     void UpdateAI(const uint32 uiDiff) override
     {
         // Return since we have no target
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         // Arcane Blast
         if (m_uiArcaneBlastTimer < uiDiff)
         {
-            if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_ARCANE_BLAST) == CAST_OK)
+            if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_ARCANE_BLAST) == CAST_OK)
             {
                 m_uiArcaneBlastTimer = urand(15000, 30000);
-                m_creature->getThreatManager().modifyThreatPercent(m_creature->getVictim(), -50.0f);
+                m_creature->getThreatManager().modifyThreatPercent(m_creature->GetVictim(), -50.0f);
             }
         }
         else
@@ -136,9 +131,6 @@ struct boss_nethermancer_sepethreaAI : public ScriptedAI
             m_uiDragonsBreathTimer -= uiDiff;
 
         DoMeleeAttackIfReady();
-        
-        // don't allow her to be kited down the hallway leading to Pathaleon
-        EnterEvadeIfOutOfCombatArea(uiDiff);
     }
 };
 
@@ -176,11 +168,6 @@ struct npc_raging_flamesAI : public ScriptedAI
 
     void Reset() override
     {
-        m_creature->ApplySpellImmune(nullptr, IMMUNITY_DAMAGE, SPELL_SCHOOL_MASK_MAGIC, true);
-        m_creature->ApplySpellImmune(nullptr, IMMUNITY_DAMAGE, SPELL_SCHOOL_MASK_NORMAL, true);
-        m_creature->SetMeleeDamageSchool(SPELL_SCHOOL_FIRE);
-        m_creature->SetSpeedRate(MOVE_RUN, m_bIsRegularMode ? 0.5f : 0.8f, true);
-
         m_uiRagingFlamesTimer = m_bIsRegularMode ? 1200 : 700;
         m_uiInfernoTimer = urand(15700, 30000);
     }
@@ -202,7 +189,7 @@ struct npc_raging_flamesAI : public ScriptedAI
     void UpdateAI(const uint32 uiDiff) override
     {
         // Return since we have no target
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         // Raging Flames

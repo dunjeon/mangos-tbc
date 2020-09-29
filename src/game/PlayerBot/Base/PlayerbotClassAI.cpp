@@ -89,12 +89,6 @@ bool PlayerbotClassAI::EatDrinkBandage(bool bMana, unsigned char foodPercent, un
     return false;
 }
 
-bool PlayerbotClassAI::CanPull()
-{
-    DEBUG_LOG("[PlayerbotAI]: Warning: Using PlayerbotClassAI::CanPull() rather than class specific function");
-    return false;
-}
-
 bool PlayerbotClassAI::CastHoTOnTank()
 {
     DEBUG_LOG("[PlayerbotAI]: Warning: Using PlayerbotClassAI::CastHoTOnTank() rather than class specific function");
@@ -107,18 +101,52 @@ CombatManeuverReturns PlayerbotClassAI::HealPlayer(Player* target)
     if (!m_bot) return RETURN_NO_ACTION_ERROR;
 
     if (!target) return RETURN_NO_ACTION_INVALIDTARGET;
-    if (target->IsInDuel()) return RETURN_NO_ACTION_INVALIDTARGET;
+    if (target->IsInDuel() || !target->IsAlive()) return RETURN_NO_ACTION_INVALIDTARGET;
 
     return RETURN_NO_ACTION_OK;
 }
 
-// Please note that job_type JOB_MANAONLY is a cumulative restriction. JOB_TANK | JOB_HEAL means both; JOB_TANK | JOB_MANAONLY means tanks with powertype MANA (paladins, druids)
-CombatManeuverReturns PlayerbotClassAI::Buff(bool (*BuffHelper)(PlayerbotAI*, uint32, Unit*), uint32 spellId, uint32 type, bool bMustBeOOC)
+CombatManeuverReturns PlayerbotClassAI::ResurrectPlayer(Player* target)
 {
     if (!m_ai)  return RETURN_NO_ACTION_ERROR;
     if (!m_bot) return RETURN_NO_ACTION_ERROR;
-    if (!m_bot->isAlive() || m_bot->IsInDuel()) return RETURN_NO_ACTION_ERROR;
-    if (bMustBeOOC && m_bot->isInCombat()) return RETURN_NO_ACTION_ERROR;
+
+    if (!target) return RETURN_NO_ACTION_INVALIDTARGET;
+    if (target->IsAlive()) return RETURN_NO_ACTION_INVALIDTARGET;
+
+    return RETURN_NO_ACTION_OK;
+}
+
+CombatManeuverReturns PlayerbotClassAI::DispelPlayer(Player* target)
+{
+    if (!m_ai)  return RETURN_NO_ACTION_ERROR;
+    if (!m_bot) return RETURN_NO_ACTION_ERROR;
+
+    if (!target) return RETURN_NO_ACTION_INVALIDTARGET;
+    if (target->IsInDuel() || !target->IsAlive()) return RETURN_NO_ACTION_INVALIDTARGET;
+
+    return RETURN_NO_ACTION_OK;
+}
+
+/**
+ * Buff()
+ * return CombatManeuverReturns Returns RETURN_CONTINUE and buff unit target if it meets criteria to be buffed by bot with spell, else returns RETURN_NO_ACTION_OK
+ *
+ * params:BuffHelper boolean function that will be called back if buffing criteria are met
+ * params:spellId uint32 the spell ID of the spell buff
+ * params:type uint32, optional: default: JOB_ALL, the JOB_TYPE that target must have to be eligible for buffing
+ *        Please note that job_type JOB_MANAONLY is a cumulative restriction. JOB_TANK | JOB_HEAL means both;
+ *        JOB_TANK | JOB_MANAONLY means tanks with powertype MANA (paladins, druids)
+ * params: mustBeOOC boolean, optional: default: false, will return RETURN_NO_ACTION_OK if set to true and bot is in combat
+ * If false is returned, the bot is expected to perform a buff check for the single target version of the group buff.
+ *
+ */
+CombatManeuverReturns PlayerbotClassAI::Buff(bool (*BuffHelper)(PlayerbotAI*, uint32, Unit*), uint32 spellId, uint32 type, bool mustBeOOC)
+{
+    if (!m_ai)  return RETURN_NO_ACTION_ERROR;
+    if (!m_bot) return RETURN_NO_ACTION_ERROR;
+    if (!m_bot->IsAlive() || m_bot->IsInDuel()) return RETURN_NO_ACTION_ERROR;
+    if (mustBeOOC && m_bot->IsInCombat()) return RETURN_NO_ACTION_ERROR;
 
     if (spellId == 0) return RETURN_NO_ACTION_OK;
 
@@ -126,23 +154,28 @@ CombatManeuverReturns PlayerbotClassAI::Buff(bool (*BuffHelper)(PlayerbotAI*, ui
     if (m_bot->GetGroup())
     {
         Group::MemberSlotList const& groupSlot = m_bot->GetGroup()->GetMemberSlots();
-        for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
+        for (const auto & memberItr : groupSlot)
         {
-            Player* groupMember = sObjectMgr.GetPlayer(itr->guid);
-            if (!groupMember || !groupMember->isAlive() || groupMember->IsInDuel())
+            Player* member = sObjectMgr.GetPlayer(memberItr.guid);
+            if (!member || !member->IsAlive() || member->IsInDuel())
                 continue;
-            JOB_TYPE job = GetTargetJob(groupMember);
-            if (job & type && (!(job & JOB_MANAONLY) || groupMember->getClass() == CLASS_DRUID || groupMember->GetPowerType() == POWER_MANA))
+            // Guess the job of current member
+            JOB_TYPE job = GetTargetJob(member);
+            // If job matches requested job type or (mana target is requested and member is mana user (or shapeshift druid)): buff it
+            if (job & type ||
+                (type & JOB_MANAONLY && (member->getClass() == CLASS_DRUID || member->GetPowerType() == POWER_MANA)))
             {
-                if (BuffHelper(m_ai, spellId, groupMember))
+                if (BuffHelper(m_ai, spellId, member))
                     return RETURN_CONTINUE;
             }
         }
     }
     else
     {
+        // Buff master if he/she is eligible
         if (m_master && !m_master->IsInDuel()
-                && (!(GetTargetJob(m_master) & JOB_MANAONLY) || m_master->getClass() == CLASS_DRUID || m_master->GetPowerType() == POWER_MANA))
+            && (GetTargetJob(m_master) & type
+                || (type & JOB_MANAONLY && (m_master->getClass() == CLASS_DRUID || m_master->GetPowerType() == POWER_MANA))))
             if (BuffHelper(m_ai, spellId, m_master))
                 return RETURN_CONTINUE;
         // Do not check job or power type - any buff you have is always useful to self
@@ -155,50 +188,78 @@ CombatManeuverReturns PlayerbotClassAI::Buff(bool (*BuffHelper)(PlayerbotAI*, ui
 
 /**
  * NeedGroupBuff()
- * return boolean Returns true if more than two targets in the bot's group need the group buff.
+ * return boolean Returns true if more than two targets in the bot's group need the group buff, else returns false
  *
  * params:groupBuffSpellId uint32 the spell ID of the group buff like Arcane Brillance
  * params:singleBuffSpellId uint32 the spell ID of the single target buff equivalent of the group buff like Arcane Intellect for group buff Arcane Brillance
- * return false if false is returned, the bot is expected to perform a buff check for the single target buff of the group buff.
+ * If false is returned, the bot is expected to perform a buff check for the single target version of the group buff.
  *
  */
 bool PlayerbotClassAI::NeedGroupBuff(uint32 groupBuffSpellId, uint32 singleBuffSpellId)
 {
     if (!m_bot) return false;
 
-    uint8 numberOfGroupTargets = 0;
-    // Check group players to avoid using regeant and mana with an expensive group buff
+    uint8 unbuffedTargets = 0;
+    // Check group players to avoid using reagent and mana with an expensive group buff
     // when only two players or less need it
     if (m_bot->GetGroup())
     {
         Group::MemberSlotList const& groupSlot = m_bot->GetGroup()->GetMemberSlots();
-        for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
+        for (const auto& memberItr : groupSlot)
         {
-            Player* groupMember = sObjectMgr.GetPlayer(itr->guid);
-            if (!groupMember || !groupMember->isAlive())
+            Player* member = sObjectMgr.GetPlayer(memberItr.guid);
+            if (!member || !member->IsAlive())
                 continue;
             // Check if group member needs buff
-            if (!groupMember->HasAura(groupBuffSpellId, EFFECT_INDEX_0) && !groupMember->HasAura(singleBuffSpellId, EFFECT_INDEX_0))
-                numberOfGroupTargets++;
+            if (!member->HasAura(groupBuffSpellId, EFFECT_INDEX_0) && !member->HasAura(singleBuffSpellId, EFFECT_INDEX_0))
+                unbuffedTargets++;
             // Don't forget about pet
-            Pet* pet = groupMember->GetPet();
-            if (pet && !pet->HasAuraType(SPELL_AURA_MOD_UNATTACKABLE) && (pet->HasAura(groupBuffSpellId, EFFECT_INDEX_0) || pet->HasAura(singleBuffSpellId, EFFECT_INDEX_0)))
-                numberOfGroupTargets++;
+            Pet* pet = member->GetPet();
+            if (pet && !pet->HasAuraType(SPELL_AURA_MOD_UNATTACKABLE) && !(pet->HasAura(groupBuffSpellId, EFFECT_INDEX_0) || pet->HasAura(singleBuffSpellId, EFFECT_INDEX_0)))
+                unbuffedTargets++;
         }
-        // treshold set to 2 targets because beyond that value, the group buff cost is cheaper in mana
-        if (numberOfGroupTargets < 3)
-            return false;
-
-        // In doubt, buff everyone
-        return true;
+        // threshold is set to 2 targets because beyond that value, the group buff cost is cheaper in mana
+        return unbuffedTargets >= 3;
     }
+    return false;   // no group, no group buff
+}
+
+/**
+ * FindTargetAndHeal()
+ * return bool Returns true if a unit in need of healing was found and healed. Returns false else.
+ * Find a target based on healing orders (no orders = no healing), then try to heal it
+ * using own class HealPlayer() method
+ */
+bool PlayerbotClassAI::FindTargetAndHeal()
+{
+    if (!m_ai)  return false;
+    if (!m_bot) return false;
+    if (!m_bot->IsAlive() || m_bot->IsInDuel() || !m_ai->IsHealer()) return false;
+
+    // Heal other players/bots first
+    // Select a target based on orders and some context (pets are ignored because GetHealTarget() only works on players)
+    Player* targetToHeal;
+    JOB_TYPE type = (m_ai->GetCombatOrder() & PlayerbotAI::ORDERS_NOT_MAIN_HEAL) ? JOB_ALL_NO_MT : JOB_ALL;
+    // 1. bot has orders to focus on main tank
+    if (m_ai->IsMainHealer())
+        targetToHeal = GetHealTarget(JOB_MAIN_TANK);
+    // 2. Look at its own group (this implies raid leader creates balanced groups, except for the MT group)
     else
-        return false;   // no group, no group buff
+        targetToHeal = GetHealTarget(type, true);
+    // 3. still no target to heal, search amongst everyone
+    if (!targetToHeal)
+        targetToHeal = GetHealTarget(type);
+
+    if (m_ai->GetClassAI()->HealPlayer(targetToHeal) & RETURN_CONTINUE)
+        return true;
+
+    return false;   
 }
 
 /**
  * GetHealTarget()
- * return Unit* Returns unit to be healed. First checks 'critical' Healer(s), next Tank(s), next Master (if different from:), next DPS.
+ * return Unit* Returns unit to be healed. First checks Main Tank(s), next 'critical' Healer(s), next regular Tank(s)
+ * next Master (if different from:), next DPS.
  * If none of the healths are low enough (or multiple valid targets) against these checks, the lowest health is healed. Having a target
  * returned does not guarantee it's worth healing, merely that the target does not have 100% health.
  *
@@ -207,11 +268,11 @@ bool PlayerbotClassAI::NeedGroupBuff(uint32 groupBuffSpellId, uint32 singleBuffS
  * Will need extensive re-write for co-operation amongst multiple healers. As it stands, multiple healers would all pick the same 'ideal'
  * healing target.
  */
-Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type)
+Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type, bool onlyPickFromSameGroup)
 {
     if (!m_ai)  return nullptr;
     if (!m_bot) return nullptr;
-    if (!m_bot->isAlive() || m_bot->IsInDuel()) return nullptr;
+    if (!m_bot->IsAlive() || m_bot->IsInDuel()) return nullptr;
 
     // define seperately for sorting purposes - DO NOT CHANGE ORDER!
     std::vector<heal_priority> targets;
@@ -224,7 +285,8 @@ Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type)
         for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
         {
             Player* groupMember = sObjectMgr.GetPlayer(itr->guid);
-            if (!groupMember || !groupMember->isAlive() || groupMember->IsInDuel())
+            if (!groupMember || !groupMember->IsAlive() || groupMember->IsInDuel()
+                || (!m_bot->GetGroup()->SameSubGroup(m_bot, groupMember) && onlyPickFromSameGroup))
                 continue;
             JOB_TYPE job = GetTargetJob(groupMember);
             if (job & type)
@@ -244,22 +306,37 @@ Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type)
         }
     }
 
-    // Sorts according to type: Healers first, tanks next, then master followed by DPS, thanks to the order of the TYPE enum
+    // Sorts according to type: Main tank first, healers second, then regular tanks, then master followed by DPS, thanks to the order of the TYPE enum
     std::sort(targets.begin(), targets.end());
 
     uint8 uCount = 0, i = 0;
-    // x is used as 'target found' variable; i is used as the targets iterator throughout all 4 types.
+    // x is used as 'target found' variable; i is used as the targets iterator throughout all 6 types.
     int16 x = -1;
+
+    // Try to find a main tank in need of healing (if multiple, the lowest health one)
+    while (true)
+    {
+        // This works because we sorted it above
+        if (uint32(uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & JOB_MAIN_TANK)) break;
+        uCount++;
+    }
+
+    // We have uCount main tanks in the targets, check if any qualify for priority healing
+    for (; uCount > 0; uCount--, i++)
+    {
+        if (targets.at(i).hp <= m_MinHealthPercentTank)
+            if (x == -1 || targets.at(x).hp > targets.at(i).hp)
+                x = i;
+    }
+    if (x > -1) return targets.at(x).p;
 
     // Try to find a healer in need of healing (if multiple, the lowest health one)
     while (true)
     {
-        // This works because we sorted it above
-        if ((uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & JOB_HEAL)) break;
+        if (uint32(uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & (JOB_HEAL | JOB_MAIN_HEAL))) break;
         uCount++;
     }
 
-    // We have uCount healers in the targets, check if any qualify for priority healing
     for (; uCount > 0; uCount--, i++)
     {
         if (targets.at(i).hp <= m_MinHealthPercentHealer)
@@ -271,7 +348,7 @@ Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type)
     // Try to find a tank in need of healing (if multiple, the lowest health one)
     while (true)
     {
-        if ((uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & JOB_TANK)) break;
+        if (uint32(uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & JOB_TANK)) break;
         uCount++;
     }
 
@@ -288,7 +365,7 @@ Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type)
     {
         while (true)
         {
-            if ((uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & JOB_MASTER)) break;
+            if (uint32(uCount + i) >= uint32(targets.size()) || !(targets.at(uCount).type & JOB_MASTER)) break;
             uCount++;
         }
 
@@ -304,7 +381,7 @@ Player* PlayerbotClassAI::GetHealTarget(JOB_TYPE type)
     // Try to find anyone else in need of healing (lowest health one first)
     while (true)
     {
-        if ((uCount + i) >= uint32(targets.size())) break;
+        if (uint32(uCount + i) >= uint32(targets.size())) break;
         uCount++;
     }
 
@@ -513,7 +590,8 @@ bool PlayerbotClassAI::FleeFromPointIfCan(uint32 radius, Unit* pTarget, float x0
 
 /**
  * GetDispelTarget()
- * return Unit* Returns unit to be dispelled. First checks 'critical' Healer(s), next Tank(s), next Master (if different from:), next DPS.
+ * return Unit* Returns unit to be dispelled. First checks Main Tank(s), next 'critical' Healer(s), next regular Tank(s)
+ * next Master (if different from:), next DPS.
  *
  * return NULL If NULL is returned, no healing is required. At all.
  *
@@ -524,8 +602,8 @@ Player* PlayerbotClassAI::GetDispelTarget(DispelType dispelType, JOB_TYPE type, 
 {
     if (!m_ai)  return nullptr;
     if (!m_bot) return nullptr;
-    if (!m_bot->isAlive() || m_bot->IsInDuel()) return nullptr;
-    if (bMustBeOOC && m_bot->isInCombat()) return nullptr;
+    if (!m_bot->IsAlive() || m_bot->IsInDuel()) return nullptr;
+    if (bMustBeOOC && m_bot->IsInCombat()) return nullptr;
 
     // First, fill the list of targets
     if (m_bot->GetGroup())
@@ -537,7 +615,7 @@ Player* PlayerbotClassAI::GetDispelTarget(DispelType dispelType, JOB_TYPE type, 
         for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
         {
             Player* groupMember = sObjectMgr.GetPlayer(itr->guid);
-            if (!groupMember || !groupMember->isAlive())
+            if (!groupMember || !groupMember->IsAlive())
                 continue;
             JOB_TYPE job = GetTargetJob(groupMember);
             if (job & type)
@@ -557,7 +635,7 @@ Player* PlayerbotClassAI::GetDispelTarget(DispelType dispelType, JOB_TYPE type, 
             }
         }
 
-        // Sorts according to type: Healers first, tanks next, then master followed by DPS, thanks to the order of the TYPE enum
+        // Sorts according to type: Main tank first, healers second, then regular tanks, then master followed by DPS, thanks to the order of the TYPE enum
         std::sort(targets.begin(), targets.end());
 
         if (targets.size())
@@ -571,8 +649,8 @@ Player* PlayerbotClassAI::GetResurrectionTarget(JOB_TYPE type, bool bMustBeOOC)
 {
     if (!m_ai)  return nullptr;
     if (!m_bot) return nullptr;
-    if (!m_bot->isAlive() || m_bot->IsInDuel()) return nullptr;
-    if (bMustBeOOC && m_bot->isInCombat()) return nullptr;
+    if (!m_bot->IsAlive() || m_bot->IsInDuel()) return nullptr;
+    if (bMustBeOOC && m_bot->IsInCombat()) return nullptr;
 
     // First, fill the list of targets
     if (m_bot->GetGroup())
@@ -584,36 +662,43 @@ Player* PlayerbotClassAI::GetResurrectionTarget(JOB_TYPE type, bool bMustBeOOC)
         for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
         {
             Player* groupMember = sObjectMgr.GetPlayer(itr->guid);
-            if (!groupMember || groupMember->isAlive())
+            if (!groupMember || groupMember->IsAlive())
                 continue;
             JOB_TYPE job = GetTargetJob(groupMember);
             if (job & type)
                 targets.push_back(heal_priority(groupMember, 0, job));
         }
 
-        // Sorts according to type: Healers first, tanks next, then master followed by DPS, thanks to the order of the TYPE enum
+        // Sorts according to type: Main tank first, healers second, then regular tanks, then master followed by DPS, thanks to the order of the TYPE enum
         std::sort(targets.begin(), targets.end());
 
         if (targets.size())
             return targets.at(0).p;
     }
-    else if (!m_master->isAlive())
+    else if (!m_master->IsAlive())
         return m_master;
 
     return nullptr;
+}
+
+JOB_TYPE PlayerbotClassAI::GetBotJob(Player* target)
+{
+        if (target->GetPlayerbotAI()->IsMainHealer())
+            return JOB_MAIN_HEAL;
+        if (target->GetPlayerbotAI()->IsHealer())
+            return JOB_HEAL;
+        if (target->GetPlayerbotAI()->IsMainTank())
+            return JOB_MAIN_TANK;
+        if (target->GetPlayerbotAI()->IsTank())
+            return JOB_TANK;
+        return JOB_DPS;
 }
 
 JOB_TYPE PlayerbotClassAI::GetTargetJob(Player* target)
 {
     // is a bot
     if (target->GetPlayerbotAI())
-    {
-        if (target->GetPlayerbotAI()->IsHealer())
-            return JOB_HEAL;
-        if (target->GetPlayerbotAI()->IsTank())
-            return JOB_TANK;
-        return JOB_DPS;
-    }
+        return GetBotJob(target);
 
     // figure out what to do with human players - i.e. figure out if they're tank, DPS or healer
     uint32 uSpec = target->GetSpec();
@@ -663,9 +748,9 @@ CombatManeuverReturns PlayerbotClassAI::CastSpellNoRanged(uint32 nextAction, Uni
         return RETURN_NO_ACTION_OK; // Asked to do nothing so... yeh... Dooone.
 
     if (pTarget != nullptr)
-        return (m_ai->CastSpell(nextAction, *pTarget) ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
+        return (m_ai->CastSpell(nextAction, *pTarget) == SPELL_CAST_OK ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
     else
-        return (m_ai->CastSpell(nextAction) ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
+        return (m_ai->CastSpell(nextAction) == SPELL_CAST_OK ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
 }
 
 CombatManeuverReturns PlayerbotClassAI::CastSpellWand(uint32 nextAction, Unit* pTarget, uint32 SHOOT)
@@ -691,14 +776,14 @@ CombatManeuverReturns PlayerbotClassAI::CastSpellWand(uint32 nextAction, Unit* p
     if (nextAction == SHOOT)
     {
         if (SHOOT > 0 && m_ai->GetCombatStyle() == PlayerbotAI::COMBAT_RANGED && !m_bot->FindCurrentSpellBySpellId(SHOOT) && m_bot->GetWeaponForAttack(RANGED_ATTACK, true, true))
-            return (m_ai->CastSpell(SHOOT, *pTarget) ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
+            return (m_ai->CastSpell(SHOOT, *pTarget) == SPELL_CAST_OK ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
         else
             // Do Melee attack
             return RETURN_NO_ACTION_UNKNOWN; // We're asked to shoot and aren't.
     }
 
     if (pTarget != nullptr)
-        return (m_ai->CastSpell(nextAction, *pTarget) ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
+        return (m_ai->CastSpell(nextAction, *pTarget) == SPELL_CAST_OK ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
     else
-        return (m_ai->CastSpell(nextAction) ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
+        return (m_ai->CastSpell(nextAction) == SPELL_CAST_OK ? RETURN_CONTINUE : RETURN_NO_ACTION_ERROR);
 }

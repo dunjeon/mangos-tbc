@@ -28,6 +28,7 @@
 #include "Globals/SharedDefines.h"
 #include "Entities/Object.h"
 
+#include <atomic>
 #include <set>
 #include <list>
 #include <deque>
@@ -120,7 +121,11 @@ enum eConfigUInt32Values
     CONFIG_UINT32_GM_LOGIN_STATE,
     CONFIG_UINT32_GM_VISIBLE_STATE,
     CONFIG_UINT32_GM_ACCEPT_TICKETS,
+    CONFIG_UINT32_GM_LEVEL_ACCEPT_TICKETS,
     CONFIG_UINT32_GM_CHAT,
+    CONFIG_UINT32_GM_LEVEL_CHAT,
+    CONFIG_UINT32_GM_LEVEL_CHANNEL_MODERATION,
+    CONFIG_UINT32_GM_LEVEL_CHANNEL_SILENT_JOIN,
     CONFIG_UINT32_GM_WISPERING_TO,
     CONFIG_UINT32_GM_LEVEL_IN_GM_LIST,
     CONFIG_UINT32_GM_LEVEL_IN_WHO_LIST,
@@ -129,6 +134,7 @@ enum eConfigUInt32Values
     CONFIG_UINT32_MAIL_DELIVERY_DELAY,
     CONFIG_UINT32_MASS_MAILER_SEND_PER_TICK,
     CONFIG_UINT32_UPTIME_UPDATE,
+    CONFIG_UINT32_NUM_MAP_THREADS,
     CONFIG_UINT32_AUCTION_DEPOSIT_MIN,
     CONFIG_UINT32_SKILL_CHANCE_ORANGE,
     CONFIG_UINT32_SKILL_CHANCE_YELLOW,
@@ -153,6 +159,7 @@ enum eConfigUInt32Values
     CONFIG_UINT32_QUEST_WEEKLY_RESET_HOUR,
     CONFIG_UINT32_CHAT_STRICT_LINK_CHECKING_SEVERITY,
     CONFIG_UINT32_CHAT_STRICT_LINK_CHECKING_KICK,
+    CONFIG_UINT32_CHANNEL_RESTRICTED_LANGUAGE_MODE,
     CONFIG_UINT32_CORPSE_DECAY_NORMAL,
     CONFIG_UINT32_CORPSE_DECAY_RARE,
     CONFIG_UINT32_CORPSE_DECAY_ELITE,
@@ -185,6 +192,8 @@ enum eConfigUInt32Values
     CONFIG_UINT32_FOGOFWAR_STEALTH,
     CONFIG_UINT32_FOGOFWAR_HEALTH,
     CONFIG_UINT32_FOGOFWAR_STATS,
+    CONFIG_UINT32_CREATURE_PICKPOCKET_RESTOCK_DELAY,
+    CONFIG_UINT32_CHANNEL_STATIC_AUTO_TRESHOLD,
     CONFIG_UINT32_VALUE_COUNT
 };
 
@@ -256,7 +265,6 @@ enum eConfigFloatValues
     CONFIG_FLOAT_RATE_LOYALTY,
     CONFIG_FLOAT_RATE_CORPSE_DECAY_LOOTED,
     CONFIG_FLOAT_RATE_INSTANCE_RESET_TIME,
-    CONFIG_FLOAT_RATE_TARGET_POS_RECALCULATION_RANGE,
     CONFIG_FLOAT_RATE_DURABILITY_LOSS_DAMAGE,
     CONFIG_FLOAT_RATE_DURABILITY_LOSS_PARRY,
     CONFIG_FLOAT_RATE_DURABILITY_LOSS_ABSORB,
@@ -296,14 +304,15 @@ enum eConfigBoolValues
     CONFIG_BOOL_CAST_UNSTUCK,
     CONFIG_BOOL_GM_LOG_TRADE,
     CONFIG_BOOL_GM_LOWER_SECURITY,
+    CONFIG_BOOL_GM_TICKETS_QUEUE_STATUS,
     CONFIG_BOOL_SKILL_PROSPECTING,
     CONFIG_BOOL_ALWAYS_MAX_SKILL_FOR_LEVEL,
     CONFIG_BOOL_WEATHER,
     CONFIG_BOOL_EVENT_ANNOUNCE,
     CONFIG_BOOL_QUEST_IGNORE_RAID,
     CONFIG_BOOL_DETECT_POS_COLLISION,
-    CONFIG_BOOL_RESTRICTED_LFG_CHANNEL,
-    CONFIG_BOOL_SILENTLY_GM_JOIN_TO_CHANNEL,
+    CONFIG_BOOL_CHAT_RESTRICTED_RAID_WARNINGS,
+    CONFIG_BOOL_CHANNEL_RESTRICTED_LFG,
     CONFIG_BOOL_TALENTS_INSPECTING,
     CONFIG_BOOL_CHAT_FAKE_MESSAGE_PREVENTING,
     CONFIG_BOOL_CHAT_STRICT_LINK_CHECKING_SEVERITY,
@@ -315,6 +324,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_DEATH_CORPSE_RECLAIM_DELAY_PVE,
     CONFIG_BOOL_DEATH_BONES_WORLD,
     CONFIG_BOOL_DEATH_BONES_BG_OR_ARENA,
+    CONFIG_BOOL_TAXI_FLIGHT_CHAT_FIX,
     CONFIG_BOOL_LONG_TAXI_PATHS_PERSISTENCE,
     CONFIG_BOOL_ALL_TAXI_PATHS,
     CONFIG_BOOL_DECLINED_NAMES_USED,
@@ -339,6 +349,7 @@ enum eConfigBoolValues
     CONFIG_BOOL_VMAP_INDOOR_CHECK,
     CONFIG_BOOL_PET_UNSUMMON_AT_MOUNT,
     CONFIG_BOOL_PET_ATTACK_FROM_BEHIND,
+    CONFIG_BOOL_AUTO_DOWNRANK,
     CONFIG_BOOL_MMAP_ENABLED,
     CONFIG_BOOL_PLAYER_COMMANDS,
     CONFIG_BOOL_PATH_FIND_OPTIMIZE,
@@ -509,10 +520,12 @@ class World
 
         void SendWorldText(int32 string_id, ...);
         void SendWorldTextToAboveSecurity(uint32 securityLevel, int32 string_id, ...);
+        void SendWorldTextToAcceptingTickets(int32 string_id, ...);
         void SendGlobalMessage(WorldPacket const& packet) const;
         void SendServerMessage(ServerMessageType type, const char* text = "", Player* player = nullptr) const;
         void SendZoneUnderAttackMessage(uint32 zoneId, Team team);
         void SendDefenseMessage(uint32 zoneId, int32 textId);
+        void SendDefenseMessageBroadcastText(uint32 zoneId, uint32 textId);
 
         /// Are we in the middle of a shutdown?
         bool IsShutdowning() const { return m_ShutdownTimer > 0; }
@@ -556,20 +569,18 @@ class World
 
         void KickAll();
         void KickAllLess(AccountTypes sec);
+        void WarnAccount(uint32 accountId, std::string from, std::string reason, const char* type = "WARNING");
         BanReturn BanAccount(BanMode mode, std::string nameOrIP, uint32 duration_secs, std::string reason, const std::string& author);
-        bool RemoveBanAccount(BanMode mode, std::string nameOrIP);
+        BanReturn BanAccount(WorldSession *session, uint32 duration_secs, const std::string& reason, const std::string& author);
+        bool RemoveBanAccount(BanMode mode, const std::string& source, const std::string& message, std::string nameOrIP);
 
         // for max speed access
         static float GetMaxVisibleDistanceOnContinents()    { return m_MaxVisibleDistanceOnContinents; }
         static float GetMaxVisibleDistanceInInstances()     { return m_MaxVisibleDistanceInInstances;  }
         static float GetMaxVisibleDistanceInBGArenas()      { return m_MaxVisibleDistanceInBGArenas;   }
 
-        static float GetMaxVisibleDistanceInFlight()        { return m_MaxVisibleDistanceInFlight;    }
-        static float GetVisibleUnitGreyDistance()           { return m_VisibleUnitGreyDistance;       }
-        static float GetVisibleObjectGreyDistance()         { return m_VisibleObjectGreyDistance;     }
-
-        static float GetRelocationLowerLimitSq()            { return m_relocation_lower_limit_sq; }
-        static uint32 GetRelocationAINotifyDelay()          { return m_relocation_ai_notify_delay; }
+        static float GetRelocationLowerLimitSq() { return m_relocation_lower_limit_sq; }
+        static uint32 GetRelocationAINotifyDelay() { return m_relocation_ai_notify_delay; }
 
         void ProcessCliCommands();
         void QueueCliCommand(const CliCommandHolder* commandHolder) { std::lock_guard<std::mutex> guard(m_cliCommandQueueLock); m_cliCommandQueue.push_back(commandHolder); }
@@ -607,6 +618,8 @@ class World
         static TimePoint GetCurrentClockTime() { return m_currentTime; }
         static uint32 GetCurrentDiff() { return m_currentDiff; }
 
+        void UpdateSessionExpansion(uint8 expansion);
+
     protected:
         void _UpdateGameTime();
         // callback for UpdateRealmCharacters
@@ -640,7 +653,7 @@ class World
         bool configNoReload(bool reload, eConfigFloatValues index, char const* fieldname, float defvalue) const;
         bool configNoReload(bool reload, eConfigBoolValues index, char const* fieldname, bool defvalue) const;
 
-        static volatile bool m_stopEvent;
+        static std::atomic<bool> m_stopEvent;
         static uint8 m_ExitCode;
         uint32 m_ShutdownTimer;
         uint32 m_ShutdownMask;
@@ -673,10 +686,6 @@ class World
         static float m_MaxVisibleDistanceOnContinents;
         static float m_MaxVisibleDistanceInInstances;
         static float m_MaxVisibleDistanceInBGArenas;
-
-        static float m_MaxVisibleDistanceInFlight;
-        static float m_VisibleUnitGreyDistance;
-        static float m_VisibleObjectGreyDistance;
 
         static float  m_relocation_lower_limit_sq;
         static uint32 m_relocation_ai_notify_delay;

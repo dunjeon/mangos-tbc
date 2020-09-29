@@ -35,6 +35,7 @@
 #include "World/World.h"
 #include "BattleGround/BattleGroundMgr.h"
 #include "Social/SocialMgr.h"
+#include "GMTickets/GMTicketMgr.h"
 #include "Loot/LootMgr.h"
 
 #include <mutex>
@@ -89,19 +90,21 @@ bool WorldSessionFilter::Process(WorldPacket const& packet) const
 
 /// WorldSession constructor
 WorldSession::WorldSession(uint32 id, WorldSocket* sock, AccountTypes sec, uint8 expansion, time_t mute_time, LocaleConstant locale) :
-    LookingForGroup_auto_join(false), LookingForGroup_auto_add(false), m_muteTime(mute_time),
-    _player(nullptr), m_Socket(sock ? sock->shared<WorldSocket>() : nullptr), _security(sec), _accountId(id), m_expansion(expansion), _logoutTime(0),
-    m_inQueue(false), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_playerSave(false),
+    LookingForGroup_auto_join(false), LookingForGroup_auto_add(true), m_muteTime(mute_time),
+    _player(nullptr), m_Socket(sock ? sock->shared<WorldSocket>() : nullptr),
+    m_requestSocket(nullptr), m_sessionState(WORLD_SESSION_STATE_CREATED),
+    _security(sec), _accountId(id), m_expansion(expansion), _logoutTime(0),
+    m_inQueue(false), m_playerLoading(false), m_playerLogout(false), m_playerRecentlyLogout(false), m_playerSave(true),
     m_sessionDbcLocale(sWorld.GetAvailableDbcLocale(locale)), m_sessionDbLocaleIndex(sObjectMgr.GetIndexForLocale(locale)),
-    m_latency(0), m_clientTimeDelay(0), m_tutorialState(TUTORIALDATA_UNCHANGED), m_sessionState(WORLD_SESSION_STATE_CREATED),
-    m_requestSocket(nullptr) {}
+    m_latency(0), m_tutorialState(TUTORIALDATA_UNCHANGED),
+    m_timeSyncClockDeltaQueue(6), m_timeSyncClockDelta(0), m_pendingTimeSyncRequests(), m_timeSyncNextCounter(0), m_timeSyncTimer(0) {}
 
 /// WorldSession destructor
 WorldSession::~WorldSession()
 {
     ///- unload player if not unloaded
     if (_player)
-        LogoutPlayer(true);
+        LogoutPlayer();
 
     // marks this session as finalized in the socket which references (BUT DOES NOT OWN) it.
     // this lets the socket handling code know that the socket can be safely deleted
@@ -120,7 +123,6 @@ void WorldSession::SetOffline()
     {
         // friend status
         sSocialMgr.SendFriendStatus(_player, FRIEND_OFFLINE, _player->GetObjectGuid(), true);
-        _player->CleanupChannels();
         LogoutRequest(time(nullptr));
     }
 
@@ -165,6 +167,14 @@ void WorldSession::SizeError(WorldPacket const& packet, uint32 size) const
 char const* WorldSession::GetPlayerName() const
 {
     return GetPlayer() ? GetPlayer()->GetName() : "<none>";
+}
+
+void WorldSession::SetExpansion(uint8 expansion)
+{
+    m_expansion = expansion;
+    if (_player)
+        _player->OnExpansionChange(expansion);
+    SendAuthOk(); // this is a hack but does what we need - resets expansion setting in client
 }
 
 /// Send a packet to the client
@@ -251,7 +261,7 @@ void WorldSession::LogUnprocessedTail(WorldPacket const& packet) const
 }
 
 /// Update the WorldSession (triggered by World update)
-bool WorldSession::Update(PacketFilter& updater)
+bool WorldSession::Update(uint32 diff, PacketFilter& updater)
 {
     std::lock_guard<std::mutex> guard(m_recvQueueLock);
 
@@ -371,21 +381,16 @@ bool WorldSession::Update(PacketFilter& updater)
         {
             Player* const botPlayer = itr->second;
             WorldSession* const pBotWorldSession = botPlayer->GetSession();
-            if (botPlayer->IsBeingTeleported())
-                botPlayer->GetPlayerbotAI()->HandleTeleportAck();
-            else if (botPlayer->IsInWorld())
+            while(!pBotWorldSession->m_recvQueue.empty())
             {
-                while (!pBotWorldSession->m_recvQueue.empty())
-                {
-                    auto const botpacket = std::move(pBotWorldSession->m_recvQueue.front());
-                    pBotWorldSession->m_recvQueue.pop_front();
+                auto const botpacket = std::move(pBotWorldSession->m_recvQueue.front());
+                pBotWorldSession->m_recvQueue.pop_front();
 
-                    OpcodeHandler const& opHandle = opcodeTable[botpacket->GetOpcode()];
-                    pBotWorldSession->ExecuteOpcode(opHandle, *botpacket);
-                };
-                pBotWorldSession->m_recvQueue.clear();
+                OpcodeHandler const& opHandle = opcodeTable[botpacket->GetOpcode()];
+                pBotWorldSession->ExecuteOpcode(opHandle, *botpacket);
             }
         }
+        GetPlayer()->GetPlayerbotMgr()->RemoveBots();
     }
 #endif
 
@@ -404,7 +409,7 @@ bool WorldSession::Update(PacketFilter& updater)
 
                     m_Socket = m_requestSocket;
                     m_requestSocket = nullptr;
-                    sLog.outString("New Session key %s", m_Socket->GetSessionKey().AsHexStr());
+                    sLog.outDetail("New Session key %s", m_Socket->GetSessionKey().AsHexStr());
                     SendAuthOk();
                 }
                 else
@@ -429,7 +434,7 @@ bool WorldSession::Update(PacketFilter& updater)
                 }
 
                 if (ShouldLogOut(time(nullptr)) && !m_playerLoading)   // check if delayed logout is fired
-                    LogoutPlayer(true);
+                    LogoutPlayer();
 
                 return true;
 
@@ -444,7 +449,7 @@ bool WorldSession::Update(PacketFilter& updater)
                     SetOffline();
                 }
                 else if (ShouldLogOut(time(nullptr)) && !m_playerLoading)   // check if delayed logout is fired
-                    LogoutPlayer(true);
+                    LogoutPlayer();
 
                 return true;
             }
@@ -453,7 +458,7 @@ bool WorldSession::Update(PacketFilter& updater)
             {
                 if (ShouldDisconnect(time(nullptr)))   // check if delayed logout is fired
                 {
-                    LogoutPlayer(true);
+                    LogoutPlayer();
                     if (!m_requestSocket && (!m_Socket || m_Socket->IsClosed()))
                         return false;
                 }
@@ -464,26 +469,36 @@ bool WorldSession::Update(PacketFilter& updater)
                 break;
         }
     }
+    else
+    {
+        // Send time sync packet every 10s.
+        if (m_timeSyncTimer > 0)
+        {
+            if (diff >= m_timeSyncTimer)
+                SendTimeSync();
+            else
+                m_timeSyncTimer -= diff;
+        }
+    }
 
     return true;
 }
 
 /// %Log the player out
-void WorldSession::LogoutPlayer(bool Save)
+void WorldSession::LogoutPlayer()
 {
     // finish pending transfers before starting the logout
     while (_player && _player->IsBeingTeleportedFar())
         HandleMoveWorldportAckOpcode();
 
     m_playerLogout = true;
-    m_playerSave = Save;
 
     if (_player)
     {
 #ifdef BUILD_PLAYERBOT
         // Log out all player bots owned by this toon
         if (_player->GetPlayerbotMgr())
-            _player->GetPlayerbotMgr()->LogoutAllBots();
+            _player->GetPlayerbotMgr()->LogoutAllBots(true);
 #endif
 
         sLog.outChar("Account: %d (IP: %s) Logout Character:[%s] (guid: %u)", GetAccountId(), GetRemoteAddress().c_str(), _player->GetName(), _player->GetGUIDLow());
@@ -506,8 +521,8 @@ void WorldSession::LogoutPlayer(bool Save)
             _player->BuildPlayerRepop();
             _player->RepopAtGraveyard();
         }
-        else if (_player->isInCombat())
-            _player->CombatStop(true, true);
+        else if (_player->IsInCombat())
+            _player->CombatStopWithPets(true, true);
 
         // drop a flag if player is carrying it
         if (BattleGround* bg = _player->GetBattleGround())
@@ -569,7 +584,7 @@ void WorldSession::LogoutPlayer(bool Save)
 
         ///- empty buyback items and save the player in the database
         // some save parts only correctly work in case player present in map/player_lists (pets, etc)
-        if (Save)
+        if (m_playerSave)
             _player->SaveToDB();
 
         ///- Leave all channels before player delete...
@@ -590,6 +605,9 @@ void WorldSession::LogoutPlayer(bool Save)
         ///- Broadcast a logout message to the player's friends
         sSocialMgr.SendFriendStatus(_player, FRIEND_OFFLINE, _player->GetObjectGuid(), true);
         sSocialMgr.RemovePlayerSocial(_player->GetGUIDLow());
+
+        // GM ticket notification
+        sTicketMgr.OnPlayerOnlineState(*_player, false);
 
 #ifdef BUILD_PLAYERBOT
         // Remember player GUID for update SQL below
@@ -635,7 +653,6 @@ void WorldSession::LogoutPlayer(bool Save)
     }
 
     m_playerLogout = false;
-    m_playerSave = false;
     m_playerRecentlyLogout = true;
     LogoutRequest(0);
 }
@@ -643,11 +660,22 @@ void WorldSession::LogoutPlayer(bool Save)
 /// Kick a player out of the World
 void WorldSession::KickPlayer()
 {
-    if (_player)
-        LogoutPlayer(false);
+#ifdef BUILD_PLAYERBOT
+    if (!_player)
+        return;
 
-    if (m_Socket && !m_Socket->IsClosed())
-        m_Socket->Close();
+    if (_player->GetPlayerbotAI())
+    {
+        auto master = _player->GetPlayerbotAI()->GetMaster();
+        auto botMgr = master->GetPlayerbotMgr();
+        if (botMgr)
+            botMgr->LogoutPlayerBot(_player->GetObjectGuid());
+    }
+    else
+        LogoutRequest(time(nullptr) - 20, false);
+#else
+    LogoutRequest(time(nullptr) - 20, false);
+#endif
 }
 
 void WorldSession::SendExpectedSpamRecords()
@@ -683,6 +711,16 @@ void WorldSession::SendMotd()
     SendPacket(data);
 
     DEBUG_LOG("WORLD: Sent motd (SMSG_MOTD)");
+}
+
+void WorldSession::SendOfflineNameQueryResponses()
+{
+    m_offlineNameQueries.clear();
+
+    for (auto& response : m_offlineNameResponses)
+        SendNameQueryResponse(response);
+
+    m_offlineNameResponses.clear();
 }
 
 void WorldSession::SendAreaTriggerMessage(const char* Text, ...) const
@@ -910,6 +948,18 @@ void WorldSession::SendPlaySpellVisual(ObjectGuid guid, uint32 spellArtKit) cons
     SendPacket(data);
 }
 
+void WorldSession::SynchronizeMovement(MovementInfo &movementInfo)
+{
+    int64 movementTime = (int64)movementInfo.GetTime() + m_timeSyncClockDelta;
+    if (m_timeSyncClockDelta == 0 || movementTime < 0 || movementTime > 0xFFFFFFFF)
+    {
+        DETAIL_LOG("The computed movement time using clockDelta is erronous. Using fallback instead");
+        movementInfo.UpdateTime(World::GetCurrentMSTime());
+    }
+    else
+        movementInfo.UpdateTime((uint32)movementTime);
+}
+
 void WorldSession::SendAuthOk() const
 {
     WorldPacket packet(SMSG_AUTH_RESPONSE, 1 + 4 + 1 + 4 + 1);
@@ -917,7 +967,7 @@ void WorldSession::SendAuthOk() const
     packet << uint32(0);                                    // BillingTimeRemaining
     packet << uint8(0);                                     // BillingPlanFlags
     packet << uint32(0);                                    // BillingTimeRested
-    packet << uint8(Expansion());                        // 0 - normal, 1 - TBC. Must be set in database manually for each account.
+    packet << uint8(GetExpansion());                        // 0 - normal, 1 - TBC. Must be set in database manually for each account.
     SendPacket(packet, true);
 }
 
@@ -929,7 +979,34 @@ void WorldSession::SendAuthQueued() const
     packet << uint32(0);                                    // BillingTimeRemaining
     packet << uint8(0);                                     // BillingPlanFlags
     packet << uint32(0);                                    // BillingTimeRested
-    packet << uint8(Expansion());                     // 0 - normal, 1 - TBC, must be set in database manually for each account
-    packet << uint32(sWorld.GetQueuedSessionPos(this));            // position in queue
+    packet << uint8(GetExpansion());                        // 0 - normal, 1 - TBC, must be set in database manually for each account
+    packet << uint32(sWorld.GetQueuedSessionPos(this));     // position in queue
     SendPacket(packet, true);
+}
+
+void WorldSession::SendKickReason(uint8 reason, std::string const& string) const
+{
+    WorldPacket packet(SMSG_KICK_REASON, 1);
+    packet << reason;
+    packet << string;
+    SendPacket(packet, true);
+}
+
+void WorldSession::ResetTimeSync()
+{
+    m_timeSyncNextCounter = 0;
+    m_pendingTimeSyncRequests.clear();
+}
+
+void WorldSession::SendTimeSync()
+{
+    WorldPacket data(SMSG_TIME_SYNC_REQ, 4);
+    data << uint32(m_timeSyncNextCounter);
+    SendPacket(data);
+
+    m_pendingTimeSyncRequests[m_timeSyncNextCounter] = WorldTimer::getMSTime();
+
+    // Schedule next sync in 10 sec (except for the 2 first packets, which are spaced by only 5s)
+    m_timeSyncTimer = m_timeSyncNextCounter == 0 ? 5000 : 10000;
+    m_timeSyncNextCounter++;
 }

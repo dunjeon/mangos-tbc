@@ -253,9 +253,12 @@ class PlayerbotAI
             ORDERS_RESIST_NATURE        = 0x0200,   // resist nature
             ORDERS_RESIST_FROST         = 0x0400,   // resist frost
             ORDERS_RESIST_SHADOW        = 0x0800,   // resist shadow
+            ORDERS_MAIN_TANK            = 0x1000,   // main attackers binder by gaining threat in raid situation
+            ORDERS_MAIN_HEAL            = 0x2000,   // concentrate on healing the main tank (will ignore other targets as long as MT needs healing)
+            ORDERS_NOT_MAIN_HEAL        = 0x4000,   // concentrate on healing except the main tank that will be ignored
 
             // Cumulative orders
-            ORDERS_PRIMARY              = 0x0007,
+            ORDERS_PRIMARY              = 0x7007,
             ORDERS_SECONDARY            = 0x0F78,
             ORDERS_RESIST               = 0x0F00,
             ORDERS_TEMP                 = 0x00C0,   // All orders NOT to be saved, turned off by bots (or logoff, reset, ...)
@@ -279,6 +282,7 @@ class PlayerbotAI
 
         enum BotState
         {
+            BOTSTATE_LOADING,           // loading state during world load
             BOTSTATE_NORMAL,            // normal AI routines are processed
             BOTSTATE_COMBAT,            // bot is in combat
             BOTSTATE_DEAD,              // we are dead and wait for becoming ghost
@@ -402,11 +406,6 @@ class PlayerbotAI
         // For a list of opcodes that can be caught see Opcodes.cpp (SMSG_* opcodes only)
         void HandleBotOutgoingPacket(const WorldPacket& packet);
 
-        // This is called by WorldSession.cpp
-        // when it detects that a bot is being teleported. It acknowledges to the server to complete the
-        // teleportation
-        void HandleTeleportAck();
-
         // Returns what kind of situation we are in so the ai can react accordingly
         ScenarioType GetScenarioType() { return m_ScenarioType; }
         CombatStyle GetCombatStyle() { return m_combatStyle; }
@@ -459,13 +458,15 @@ class PlayerbotAI
         void findNearbyGO();
         // finds nearby creatures, whose UNIT_NPC_FLAGS match the flags specified in item list m_itemIds
         void findNearbyCreature();
-        bool IsElite(Unit* pTarget, bool isWorldBoss = false) const;
+        // finds nearby corpse that is lootable
+        void findNearbyCorpse();
+        bool IsElite(Unit* target, bool isWorldBoss = false) const;
         // Used by bots to check if their target is neutralized (polymorph, shackle or the like). Useful to avoid breaking crowd control
-        bool IsNeutralized(Unit* pTarget);
+        static bool IsNeutralized(Unit* target);
         // Make the bots face their target
-        void FaceTarget(Unit* pTarget);
+        void FaceTarget(Unit* target);
         // Used by bot to check if target is immune to a specific damage school before using an ability
-        bool IsImmuneToSchool(Unit* pTarget, SpellSchoolMask SchoolMask);
+        static bool IsImmuneToSchool(Unit* pTarget, SpellSchoolMask SchoolMask);
 
         void MakeSpellLink(const SpellEntry* sInfo, std::ostringstream& out);
         void MakeWeaponSkillLink(const SpellEntry* sInfo, std::ostringstream& out, uint32 skillid);
@@ -483,16 +484,14 @@ class PlayerbotAI
 
         bool CanReceiveSpecificSpell(uint8 spec, Unit* target) const;
 
-        bool HasTool(uint32 TC);
         bool PickPocket(Unit* pTarget);
+        bool HasTool(uint32 TC);        // TODO implement this for opening lock
         bool HasSpellReagents(uint32 spellId);
         void ItemCountInInv(uint32 itemid, uint32& count);
         uint32 GetSpellCharges(uint32 spellId);
 
         uint8 GetHealthPercent(const Unit& target) const;
         uint8 GetHealthPercent() const;
-        uint8 GetBaseManaPercent(const Unit& target) const;
-        uint8 GetBaseManaPercent() const;
         uint8 GetManaPercent(const Unit& target) const;
         uint8 GetManaPercent() const;
         uint8 GetRageAmount(const Unit& target) const;
@@ -520,13 +519,13 @@ class PlayerbotAI
         void TellMaster(const std::string& text) const;
         void TellMaster(const char* fmt, ...) const;
         void SendWhisper(const std::string& text, Player& player) const;
-        bool CastSpell(const char* args);
-        bool CastSpell(uint32 spellId);
-        bool CastSpell(uint32 spellId, Unit& target);
-        bool CheckBotCast(const SpellEntry* sInfo);
-        bool CastPetSpell(uint32 spellId, Unit* target = nullptr);
-        bool Buff(uint32 spellId, Unit* target, void (*beforeCast)(Player*) = nullptr);
-        bool SelfBuff(uint32 spellId);
+        SpellCastResult CastSpell(const char* args);
+        SpellCastResult CastSpell(uint32 spellId);
+        SpellCastResult CastSpell(uint32 spellId, Unit& target);
+        SpellCastResult CheckBotCast(const SpellEntry* sInfo);
+        SpellCastResult CastPetSpell(uint32 spellId, Unit* target = nullptr);
+        SpellCastResult Buff(uint32 spellId, Unit* target, void (*beforeCast)(Player*) = nullptr);
+        SpellCastResult SelfBuff(uint32 spellId);
         bool In_Range(Unit* Target, uint32 spellId);
         bool In_Reach(Unit* Target, uint32 spellId);
         bool CanReachWithSpellAttack(Unit* target);
@@ -597,7 +596,7 @@ class PlayerbotAI
         void DoFlight();
         void GetTaxi(ObjectGuid guid, BotTaxiNode& nodes);
 
-        bool HasCollectFlag(uint8 flag) { return m_collectionFlags & flag; }
+        bool HasCollectFlag(uint8 flag) { return (m_collectionFlags & flag) ? true : false; }
         void SetCollectFlag(uint8 flag)
         {
             if (HasCollectFlag(flag)) m_collectionFlags &= ~flag;
@@ -631,8 +630,11 @@ class PlayerbotAI
         void SetCombatOrder(CombatOrderType co, Unit* target = 0);
         void ClearCombatOrder(CombatOrderType co);
         CombatOrderType GetCombatOrder() { return this->m_combatOrder; }
-        bool IsTank() { return (m_combatOrder & ORDERS_TANK) ? true : false; }
-        bool IsHealer() { return (m_combatOrder & ORDERS_HEAL) ? true : false; }
+        bool IsMainTank() { return (m_combatOrder & ORDERS_MAIN_TANK) ? true : false; }
+        bool IsTank() { return (m_combatOrder & ORDERS_TANK) || IsMainTank() ? true : false; }
+        bool IsMainHealer() { return (m_combatOrder & ORDERS_MAIN_HEAL) ? true : false; }
+        bool IsHealer() { return (m_combatOrder & (ORDERS_HEAL | ORDERS_NOT_MAIN_HEAL)) || IsMainHealer() ? true : false; }
+        bool HasDispelOrder() { return !(m_combatOrder & ORDERS_NODISPEL); }
         bool IsDPS() { return (m_combatOrder & ORDERS_ASSIST) ? true : false; }
         bool Impulse() { srand(time(nullptr)); return (((rand() % 100) > 50) ? true : false); }
         ResistType GetResistType() { return this->m_resistType; }
@@ -640,7 +642,6 @@ class PlayerbotAI
         MovementOrderType GetMovementOrder() { return this->m_movementOrder; }
         void MovementReset();
         void MovementClear();
-        bool IsMoving();
 
         void ItemLocalization(std::string& itemName, const uint32 itemID) const;
         void QuestLocalization(std::string& questTitle, const uint32 questID) const;
@@ -759,8 +760,6 @@ class PlayerbotAI
         bool m_inventory_full;
         uint32 m_itemTarget;
 
-        time_t m_TimeDoneEating;
-        time_t m_TimeDoneDrinking;
         uint32 m_CurrentlyCastingSpellId;
         uint32 m_CraftSpellId;
         //bool m_IsFollowingMaster;
@@ -775,6 +774,8 @@ class PlayerbotAI
 
         AttackerInfoList m_attackerInfo;
 
+        // Force bot to pick a neutralised unit as combat target when told so
+        bool m_ignoreNeutralizeEffect;
         bool m_targetChanged;
         CombatTargetType m_targetType;
 

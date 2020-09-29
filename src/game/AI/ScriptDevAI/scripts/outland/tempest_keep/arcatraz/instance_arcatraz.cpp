@@ -21,7 +21,7 @@ SDComment: Mainly Harbringer Skyriss event
 SDCategory: Tempest Keep, The Arcatraz
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "arcatraz.h"
 
 /* Arcatraz encounters:
@@ -53,7 +53,7 @@ enum
     SPELL_TARGET_ALPHA              = 36856,
     SPELL_TARGET_DELTA              = 36857,
     SPELL_TARGET_GAMMA              = 36858,
-    SPELL_SIMPLE_TELEPORT           = 12980,
+    SPELL_SIMPLE_TELEPORT           = 12980, // TODO: Other mobs need to use it too
     SPELL_MIND_REND                 = 36859,
     SPELL_QUIET_SUICIDE             = 3617,
 
@@ -199,6 +199,19 @@ void instance_arcatraz::SetData(uint32 uiType, uint32 uiData)
             break;
 
         case TYPE_SOCCOTHRATES:
+            if (uiData != IN_PROGRESS)
+            {
+                GuidVector felfireVector; // at aggro felfire mobs always teleport to respawn location
+                GetCreatureGuidVectorFromStorage(NPC_WRATH_SCRYER_FELFIRE, felfireVector);
+                for (ObjectGuid& guid : felfireVector)
+                {
+                    if (Creature* creature = instance->GetCreature(guid))
+                    {
+                        creature->RemoveAllDynObjects();
+                        creature->CombatStop();
+                    }
+                }
+            }
             if (uiData == DONE)
                 DoUseDoorOrButton(GO_CORE_SECURITY_FIELD_ALPHA);
             m_auiEncounter[uiType] = uiData;

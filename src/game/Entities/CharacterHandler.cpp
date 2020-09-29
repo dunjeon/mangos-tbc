@@ -35,6 +35,7 @@
 #include "Database/DatabaseImpl.h"
 #include "Tools/PlayerDump.h"
 #include "Social/SocialMgr.h"
+#include "GMTickets/GMTicketMgr.h"
 #include "Util.h"
 #include "Tools/Language.h"
 #include "AI/ScriptDevAI/ScriptDevAIMgr.h"
@@ -95,7 +96,7 @@ bool LoginQueryHolder::Initialize()
     if (sWorld.getConfig(CONFIG_BOOL_DECLINED_NAMES_USED))
         res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADDECLINEDNAMES,   "SELECT genitive, dative, accusative, instrumental, prepositional FROM character_declinedname WHERE guid = '%u'", m_guid.GetCounter());
     // in other case still be dummy query
-    res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADGUILD,           "SELECT guildid,rank FROM guild_member WHERE guid = '%u'", m_guid.GetCounter());
+    res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADGUILD,           "SELECT guildid,`rank` FROM guild_member WHERE guid = '%u'", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADARENAINFO,       "SELECT arenateamid, played_week, played_season, personal_rating FROM arena_team_member WHERE guid='%u'", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADBGDATA,          "SELECT instance_id, team, join_x, join_y, join_z, join_o, join_map FROM character_battleground_data WHERE guid = '%u'", m_guid.GetCounter());
     res &= SetPQuery(PLAYER_LOGIN_QUERY_LOADSKILLS,          "SELECT skill, value, max FROM character_skills WHERE guid = '%u'", m_guid.GetCounter());
@@ -145,7 +146,7 @@ class CharacterHandler
 
             // The bot's WorldSession is owned by the bot's Player object
             // The bot's WorldSession is deleted by PlayerbotMgr::LogoutPlayerBot
-            WorldSession* botSession = new WorldSession(lqh->GetAccountId(), nullptr, SEC_PLAYER, masterSession->Expansion(), 0, LOCALE_enUS);
+            WorldSession* botSession = new WorldSession(lqh->GetAccountId(), nullptr, SEC_PLAYER, masterSession->GetExpansion(), 0, LOCALE_enUS);
             botSession->HandlePlayerLogin(lqh); // will delete lqh
             masterSession->GetPlayer()->GetPlayerbotMgr()->OnBotLogin(botSession->GetPlayer());
         }
@@ -261,10 +262,10 @@ void WorldSession::HandleCharCreateOpcode(WorldPacket& recv_data)
     }
 
     // prevent character creating Expansion race without Expansion account
-    if (raceEntry->expansion > Expansion())
+    if (raceEntry->expansion > GetExpansion())
     {
         data << (uint8)CHAR_CREATE_EXPANSION;
-        sLog.outError("Expansion %u account:[%d] tried to Create character with expansion %u race (%u)", Expansion(), GetAccountId(), raceEntry->expansion, race_);
+        sLog.outError("Expansion %u account:[%d] tried to Create character with expansion %u race (%u)", GetExpansion(), GetAccountId(), raceEntry->expansion, race_);
         SendPacket(data, true);
         return;
     }
@@ -404,7 +405,7 @@ void WorldSession::HandleCharCreateOpcode(WorldPacket& recv_data)
     SendPacket(data, true);
 
     const std::string& IP_str = GetRemoteAddress();
-    BASIC_LOG("Account: %d (IP: %s) Create Character:[%s] (guid: %u)", GetAccountId(), IP_str.c_str(), name.c_str(), pNewChar->GetGUIDLow());
+    DETAIL_LOG("Account: %d (IP: %s) Create Character:[%s] (guid: %u)", GetAccountId(), IP_str.c_str(), name.c_str(), pNewChar->GetGUIDLow());
     sLog.outChar("Account: %d (IP: %s) Create Character:[%s] (guid: %u)", GetAccountId(), IP_str.c_str(), name.c_str(), pNewChar->GetGUIDLow());
 
     delete pNewChar;                                        // created only to call SaveToDB()
@@ -494,14 +495,6 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket& recv_data)
     {
         // player is reconnecting
 
-        if (!isLogingOut())
-        {
-            sLog.outError("HandlePlayerLoginOpcode> %s try to login again, AccountId = %u", pCurrChar->GetGuidStr().c_str(), GetAccountId());
-            data << (uint8)CHAR_LOGIN_FAILED;
-            SendPacket(data, true);
-            return;
-        }
-
         if (!pCurrChar)
         {
             sLog.outError("HandlePlayerLoginOpcode> %s try to login a second char, AccountId = %u", _player->GetGuidStr().c_str(), GetAccountId());
@@ -510,10 +503,22 @@ void WorldSession::HandlePlayerLoginOpcode(WorldPacket& recv_data)
             return;
         }
 
+        if (!isLogingOut())
+        {
+            sLog.outError("HandlePlayerLoginOpcode> %s try to login again, AccountId = %u", pCurrChar->GetGuidStr().c_str(), GetAccountId());
+            data << (uint8)CHAR_LOGIN_FAILED;
+            SendPacket(data, true);
+            return;
+        }
+
         if (!_player->IsInWorld())
             // finish pending transfers before starting the logout
             while (_player && _player->IsBeingTeleportedFar())
                 HandleMoveWorldportAckOpcode();
+
+        // release loot on reconnect
+        if (Loot* loot = sLootMgr.GetLoot(_player))
+            loot->Release(_player);
 
         HandlePlayerReconnect();
         return;
@@ -564,6 +569,8 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
     SetPlayer(pCurrChar);
     m_playerLoading = true;
 
+    m_initialZoneUpdated = false;
+
     SetOnline();
 
     // "GetAccountId()==db stored account id" checked in LoadFromDB (prevent login not own character using cheating tools)
@@ -581,6 +588,8 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
         SendPacket(data, true);
         return;
     }
+
+    Group* group = pCurrChar->GetGroup();
 
     pCurrChar->SendDungeonDifficulty(false);
 
@@ -605,6 +614,8 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
     // Send Spam records
     SendExpectedSpamRecords();
     SendMotd();
+
+    SendOfflineNameQueryResponses();
 
     // QueryResult *result = CharacterDatabase.PQuery("SELECT guildid,rank FROM guild_member WHERE guid = '%u'",pCurrChar->GetGUIDLow());
     QueryResult* resultGuild = holder->GetResult(PLAYER_LOGIN_QUERY_LOADGUILD);
@@ -646,7 +657,7 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
         }
     }
 
-    if (!pCurrChar->isAlive())
+    if (!pCurrChar->IsAlive())
         pCurrChar->SendCorpseReclaimDelay(true);
 
     pCurrChar->SendInitialPacketsBeforeAddToMap();
@@ -670,7 +681,7 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
         MapEntry const* mapEntry = sMapStore.LookupEntry(pCurrChar->GetMapId());
         if (!mapEntry)
             lockStatus = AREA_LOCKSTATUS_UNKNOWN_ERROR;
-        else if (pCurrChar->GetSession()->Expansion() < mapEntry->Expansion())
+        else if (pCurrChar->GetSession()->GetExpansion() < mapEntry->Expansion())
             lockStatus = AREA_LOCKSTATUS_INSUFFICIENT_EXPANSION;
     }
     if (lockStatus != AREA_LOCKSTATUS_OK || !pCurrChar->GetMap()->Add(pCurrChar))
@@ -685,6 +696,10 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 
     sObjectAccessor.AddObject(pCurrChar);
     // DEBUG_LOG("Player %s added to Map.",pCurrChar->GetName());
+
+    if (group)
+        group->SendUpdateTo(pCurrChar);
+
     pCurrChar->GetSocial()->SendSocialList();
 
     pCurrChar->SendInitialPacketsAfterAddToMap();
@@ -700,12 +715,15 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
 
     pCurrChar->SetInGameTime(WorldTimer::getMSTime());
 
-    // announce group about member online (must be after add to player list to receive announce to self)
-    if (Group* group = pCurrChar->GetGroup())
+    // Send group member online status for other members
+    if (group)
         group->UpdatePlayerOnlineStatus(pCurrChar);
 
-    // friend status
+    // Send friend list online status for other players
     sSocialMgr.SendFriendStatus(pCurrChar, FRIEND_ONLINE, pCurrChar->GetObjectGuid(), true);
+
+    // GM ticket notifications
+    sTicketMgr.OnPlayerOnlineState(*pCurrChar, true);
 
     // Place character in world (and load zone) before some object loading
     pCurrChar->LoadCorpse();
@@ -778,7 +796,7 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder* holder)
     sLog.outChar("Account: %d (IP: %s) Login Character:[%s] (guid: %u)",
                  GetAccountId(), IP_str.c_str(), pCurrChar->GetName(), pCurrChar->GetGUIDLow());
 
-    if (!pCurrChar->IsStandState() && !pCurrChar->hasUnitState(UNIT_STAT_STUNNED))
+    if (!pCurrChar->IsStandState() && !pCurrChar->IsStunned())
         pCurrChar->SetStandState(UNIT_STAND_STATE_STAND);
 
     m_playerLoading = false;
@@ -790,15 +808,23 @@ void WorldSession::HandlePlayerReconnect()
     // stop logout timer if need
     LogoutRequest(0);
 
+    // silently kick from chat channels player lists to allow reconnect correctly
+    _player->CleanupChannels();
+
     // set loading flag
     m_playerLoading = true;
 
     // reset all visible objects to be able to resend them
     _player->m_clientGUIDs.clear();
 
+    m_initialZoneUpdated = false;
+
     SetOnline();
 
+    Group* group = _player->GetGroup();
+
     _player->SendDungeonDifficulty(false);
+
     WorldPacket data(SMSG_LOGIN_VERIFY_WORLD, 20);
     data << _player->GetMapId();
     data << _player->GetPositionX();
@@ -820,6 +846,8 @@ void WorldSession::HandlePlayerReconnect()
     // Send Spam records
     SendExpectedSpamRecords();
     SendMotd();
+
+    SendOfflineNameQueryResponses();
 
     if (_player->GetGuildId() != 0)
     {
@@ -843,32 +871,38 @@ void WorldSession::HandlePlayerReconnect()
         }
     }
 
-    if (!_player->isAlive())
+    if (!_player->IsAlive())
         _player->SendCorpseReclaimDelay(true);
 
     _player->SendInitialPacketsBeforeAddToMap();
 
     _player->GetMap()->CreatePlayerOnClient(_player);
 
+    if (group)
+        group->SendUpdateTo(_player);
+
     _player->GetSocial()->SendSocialList();
     uint32 areaId = 0;
     uint32 zoneId = 0;
     _player->GetZoneAndAreaId(zoneId, areaId);
     _player->SendInitWorldStates(zoneId, areaId);
-    _player->ResetTimeSync();
-    _player->SendTimeSync();
+    _player->GetSession()->ResetTimeSync();
+    _player->GetSession()->SendTimeSync();
     _player->SendAllSpellMods(SPELLMOD_FLAT);
     _player->SendAllSpellMods(SPELLMOD_PCT);
     _player->CastSpell(_player, 836, TRIGGERED_OLD_TRIGGERED);       // LOGINEFFECT
     _player->SendEnchantmentDurations();                             // must be after add to map
     _player->SendItemDurations();                                    // must be after add to map
 
-    // announce group about member online (must be after add to player list to receive announce to self)
-    if (Group* group = _player->GetGroup())
-        group->UpdatePlayerOnlineStatus(_player);
-
-    // friend status
+    // Send friend list online status for other players
     sSocialMgr.SendFriendStatus(_player, FRIEND_ONLINE, _player->GetObjectGuid(), true);
+
+    // GM ticket notifications
+    sTicketMgr.OnPlayerOnlineState(*_player, true);
+
+    // Send current LFG preferences on reconnect
+    _player->GetSession()->SendLFGUpdateLFM();
+    _player->GetSession()->SendLFGUpdateLFG();
 
     // show time before shutdown if shutdown planned.
     if (sWorld.IsShutdowning())
@@ -898,6 +932,12 @@ void WorldSession::HandlePlayerReconnect()
 
     // send mirror timers
     _player->SendMirrorTimers(true);
+
+    if (!_player->IsStandState() && !_player->IsStunned())
+        _player->SetStandState(UNIT_STAND_STATE_STAND);
+
+    // Undo flags and states set by logout if present:
+    _player->SetStunnedByLogout(false);
 
     m_playerLoading = false;
 }

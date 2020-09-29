@@ -21,7 +21,7 @@ SDComment: Timers.
 SDCategory: Karazhan
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "karazhan.h"
 #include "AI/ScriptDevAI/base/TimerAI.h"
 
@@ -75,20 +75,20 @@ enum MoroesActions
     MOROES_ACTION_GAROTTE,
 };
 
-struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
+struct boss_moroesAI : public ScriptedAI, public CombatActions
 {
-    boss_moroesAI(Creature* pCreature) : ScriptedAI(pCreature), CombatTimerAI(MOROES_ACTION_MAX)
+    boss_moroesAI(Creature* pCreature) : ScriptedAI(pCreature), CombatActions(MOROES_ACTION_MAX)
     {
         m_pInstance  = (ScriptedInstance*)pCreature->GetInstanceData();
-        AddCombatAction(MOROES_ACTION_VANISH, 0);
-        AddCombatAction(MOROES_ACTION_BLIND, 0);
-        AddCombatAction(MOROES_ACTION_GOUGE, 0);
-        AddCombatAction(MOROES_ACTION_ENRAGE, 0);
-        AddCustomAction(MOROES_ACTION_GAROTTE, 0, [&]()
+        AddCombatAction(MOROES_ACTION_VANISH, 0u);
+        AddCombatAction(MOROES_ACTION_BLIND, 0u);
+        AddCombatAction(MOROES_ACTION_GOUGE, 0u);
+        AddCombatAction(MOROES_ACTION_ENRAGE, 0u);
+        AddCustomAction(MOROES_ACTION_GAROTTE, true, [&]()
         {
-            if (m_creature->getVictim())
-                m_creature->getVictim()->CastSpell(nullptr, SPELL_GARROTE, TRIGGERED_OLD_TRIGGERED);
-        }, true);
+            if (m_creature->GetVictim())
+                m_creature->GetVictim()->CastSpell(nullptr, SPELL_GARROTE, TRIGGERED_OLD_TRIGGERED);
+        });
         Reset();
     }
 
@@ -145,8 +145,8 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
             SetMeleeEnabled(true);
             SetCombatScriptStatus(false);
             m_attackAngle = 0.f;
-            if (m_creature->isInCombat()) // can happen on evade
-                DoStartMovement(m_creature->getVictim());
+            if (m_creature->IsInCombat()) // can happen on evade
+                DoStartMovement(m_creature->GetVictim());
         }
     }
 
@@ -186,7 +186,7 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
     void DoSpawnGuests()
     {
         // not if m_creature are dead, so avoid
-        if (!m_creature->isAlive())
+        if (!m_creature->IsAlive())
             return;
 
         // it's empty, so first time
@@ -216,7 +216,7 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
                 // If we already have the creature on the map, then don't summon it
                 if (Creature* add = m_pInstance->GetSingleCreatureFromStorage(m_vGuestsEntryList[i], true))
                 {
-                    if (add->isInCombat())
+                    if (add->IsInCombat())
                         add->AI()->EnterEvadeMode();
                     continue;
                 }
@@ -240,7 +240,7 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
 
             for (const auto& i : PlayerList)
             {
-                if (i.getSource()->isAlive() && i.getSource()->HasAura(SPELL_GARROTE))
+                if (i.getSource()->IsAlive() && i.getSource()->HasAura(SPELL_GARROTE))
                     i.getSource()->RemoveAurasDueToSpell(SPELL_GARROTE);
             }
         }
@@ -262,13 +262,15 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
                         Unit* target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, SPELL_GARROTE, SELECT_FLAG_PLAYER | SELECT_FLAG_NOT_AURA);
                         if (!target) // if no target without garrote found - select any random
                             target = m_creature->SelectAttackingTarget(ATTACKING_TARGET_RANDOM, 0, nullptr, SELECT_FLAG_PLAYER);
+                        if (!target)
+                            break;
                         target->CastSpell(nullptr, SPELL_TAUNT, TRIGGERED_OLD_TRIGGERED); // TODO: Needs to send both packets
                         m_creature->SelectHostileTarget(); // apply taunt before vanish
                         DoCastSpellIfCan(nullptr, SPELL_VANISH);
                         SetCombatScriptStatus(true);
                         SetMeleeEnabled(false);
                         m_attackAngle = M_PI_F;
-                        DoStartMovement(m_creature->getVictim());
+                        DoStartMovement(m_creature->GetVictim());
                         ResetTimer(i, GetSubsequentActionTimer(i));
                         SetActionReadyStatus(i, false);
                         ResetTimer(MOROES_ACTION_GAROTTE, 9500);
@@ -288,7 +290,7 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
                     }
                     case MOROES_ACTION_GOUGE:
                     {
-                        if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_GOUGE) == CAST_OK)
+                        if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_GOUGE) == CAST_OK)
                         {
                             ResetTimer(i, GetSubsequentActionTimer(i));
                             SetActionReadyStatus(i, false);
@@ -314,9 +316,9 @@ struct boss_moroesAI : public ScriptedAI, public CombatTimerAI
 
     void UpdateAI(const uint32 diff) override
     {
-        UpdateTimers(diff, m_creature->isInCombat());
+        UpdateTimers(diff, m_creature->IsInCombat());
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         ExecuteActions();

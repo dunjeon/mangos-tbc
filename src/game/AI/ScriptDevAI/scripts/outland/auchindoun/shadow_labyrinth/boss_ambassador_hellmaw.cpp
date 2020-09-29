@@ -21,7 +21,7 @@ SDComment: Enrage spell missing/not known
 SDCategory: Auchindoun, Shadow Labyrinth
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "shadow_labyrinth.h"
 
 enum
@@ -45,6 +45,7 @@ struct boss_ambassador_hellmawAI : public ScriptedAI
     {
         m_pInstance = (instance_shadow_labyrinth*)pCreature->GetInstanceData();
         m_bIsRegularMode = pCreature->GetMap()->IsRegularDifficulty();
+        m_creature->SetCanEnterCombat(false);
         SetReactState(REACT_PASSIVE);
         Reset();
     }
@@ -65,6 +66,19 @@ struct boss_ambassador_hellmawAI : public ScriptedAI
         m_uiFearTimer           = urand(20000, 26000);
         m_uiEnrageTimer         = 3 * MINUTE * IN_MILLISECONDS;
         m_bIsEnraged            = false;
+    }
+
+    void ReceiveAIEvent(AIEventType eventType, Unit* /*sender*/, Unit* /*invoker*/, uint32 /*miscValue*/) override
+    {
+        if (eventType == AI_EVENT_CUSTOM_A)
+        {
+            // yell intro and remove banish aura
+            DoScriptText(SAY_HELLMAW_INTRO, m_creature);
+            m_creature->GetMotionMaster()->MoveWaypoint();
+            m_creature->RemoveAurasDueToSpell(SPELL_BANISH);
+            m_creature->SetCanEnterCombat(true);
+            SetReactState(REACT_AGGRESSIVE);
+        }
     }
 
     void JustReachedHome() override
@@ -121,7 +135,7 @@ struct boss_ambassador_hellmawAI : public ScriptedAI
                 m_uiBanishTimer -= uiDiff;
         }
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         if (m_uiCorrosiveAcidTimer < uiDiff)

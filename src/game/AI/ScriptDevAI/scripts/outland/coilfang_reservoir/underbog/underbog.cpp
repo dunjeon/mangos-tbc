@@ -21,7 +21,7 @@ SDComment:
 SDCategory: Coilfang Resevoir, The Underbog
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "underbog.h"
 
 instance_underbog::instance_underbog(Map* map) : ScriptedInstance(map), m_bGhazanSurfaced(false)
@@ -52,6 +52,8 @@ void instance_underbog::OnCreatureCreate(Creature* creature)
 {
     switch (creature->GetEntry())
     {
+    case NPC_SWAMPLORD_MUSELEK:
+    case NPC_CLAW:
     case NPC_GHAZAN:
         m_npcEntryGuidStore[creature->GetEntry()] = creature->GetObjectGuid();
         break;

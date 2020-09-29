@@ -21,7 +21,7 @@ SDComment: Some details are not very clear: the usage of Shoot and Multishot spe
 SDCategory: Coilfang Resevoir, Serpent Shrine Cavern
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "serpent_shrine.h"
 #include "Entities/TemporarySpawn.h"
 
@@ -113,7 +113,6 @@ enum
 
     // other
     POINT_MOVE_CENTER           = 1,
-    POINT_MOVE_DISTANCE         = 2,
 
     PHASE_1                     = 1,
     PHASE_2                     = 2,
@@ -251,7 +250,7 @@ struct boss_lady_vashjAI : public ScriptedAI
 
     void ExecuteActions()
     {
-        if (m_creature->IsNonMeleeSpellCasted(false) || !CanExecuteCombatAction())
+        if (!CanExecuteCombatAction())
             return;
 
         for (uint32 i = 0; i < VASHJ_ACTION_MAX; ++i)
@@ -289,7 +288,7 @@ struct boss_lady_vashjAI : public ScriptedAI
                     }
                     case VASHJ_ACTION_SHOCK_BLAST:
                     {
-                        if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_SHOCK_BLAST) == CAST_OK)
+                        if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_SHOCK_BLAST) == CAST_OK)
                         {
                             m_uiShockBlastTimer = urand(10000, 20000);
                             m_actionReadyStatus[i] = false;
@@ -322,13 +321,13 @@ struct boss_lady_vashjAI : public ScriptedAI
                     }
                     case VASHJ_ACTION_MELEE_MODE:
                     {
-                        if (m_rangeMode && m_creature->CanReachWithMeleeAttack(m_creature->getVictim()))
+                        if (m_rangeMode && m_creature->CanReachWithMeleeAttack(m_creature->GetVictim()))
                         {
                             m_rangeMode = false;
                             m_attackDistance = 0.0f;
                             //m_creature->SetSheath(SHEATH_STATE_MELEE);
                             SetMeleeEnabled(true);
-                            DoStartMovement(m_creature->getVictim());
+                            DoStartMovement(m_creature->GetVictim());
                         }
                         break;
                     }
@@ -339,12 +338,12 @@ struct boss_lady_vashjAI : public ScriptedAI
                             bool success = false;
                             if (urand(0, 3)) // roughly 1/4 chance for multishot
                             {
-                                if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_SHOOT) == CAST_OK)
+                                if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_SHOOT) == CAST_OK)
                                     success = true;
                             }
                             else
                             {
-                                if (DoCastSpellIfCan(m_creature->getVictim(), SPELL_MULTI_SHOT) == CAST_OK)
+                                if (DoCastSpellIfCan(m_creature->GetVictim(), SPELL_MULTI_SHOT) == CAST_OK)
                                     success = true;
                             }
                             if (success)
@@ -400,7 +399,7 @@ struct boss_lady_vashjAI : public ScriptedAI
         {
             case SPELL_ENTANGLE:
             case SPELL_SHOCK_BLAST:
-                if (m_creature->getVictim() != victim) // entangle hit others, shock blast grounding totem case
+                if (m_creature->GetVictim() != victim) // entangle hit others, shock blast grounding totem case
                     break;
                 DistanceYourself();
                 break;
@@ -415,14 +414,26 @@ struct boss_lady_vashjAI : public ScriptedAI
         m_attackDistance = 30.f;
         m_rangeMode = true;
         SetMeleeEnabled(false);
-        if (Unit* victim = m_creature->getVictim()) // make sure target didnt die
+        if (Unit* victim = m_creature->GetVictim()) // make sure target didnt die
         {
-            float x, y, z;
-            SetCombatScriptStatus(true);
-            SetCombatMovement(false);
-            m_creature->getVictim()->GetNearPoint(m_creature, x, y, z, m_creature->GetObjectBoundingRadius(), DISTANCING_CONSTANT + m_creature->GetCombinedCombatReach(victim) * 2, victim->GetAngle(m_creature));
-            m_creature->GetMotionMaster()->MovePoint(POINT_MOVE_DISTANCE, x, y, z);
+            float distance = DISTANCING_CONSTANT + m_creature->GetCombinedCombatReach(victim, true) * 2;
+            m_creature->GetMotionMaster()->DistanceYourself(distance);
         }
+    }
+
+    void DistancingStarted()
+    {
+        SetCombatScriptStatus(true);
+    }
+
+    void DistancingEnded()
+    {
+        SetCombatScriptStatus(false);
+        if (m_creature->GetVictim())
+            DoStartMovement(m_creature->GetVictim());
+        m_shootTimer = 2000;
+        m_actionReadyStatus[VASHJ_ACTION_SHOOT] = false;
+        DoCastSpellIfCan(m_creature->GetVictim(), SPELL_SHOOT);
     }
 
     void Aggro(Unit* /*pWho*/) override
@@ -509,17 +520,6 @@ struct boss_lady_vashjAI : public ScriptedAI
             m_creature->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
 
             SetCombatScriptStatus(false);
-        }
-        else if (uiPointId == POINT_MOVE_DISTANCE)
-        {
-            SetCombatScriptStatus(false);
-            SetCombatMovement(true);
-            if (m_creature->getVictim())
-                DoStartMovement(m_creature->getVictim());
-
-            m_shootTimer = 2000;
-            m_actionReadyStatus[VASHJ_ACTION_SHOOT] = false;
-            DoCastSpellIfCan(m_creature->getVictim(), SPELL_SHOOT);       
         }
     }
 
@@ -654,8 +654,8 @@ struct boss_lady_vashjAI : public ScriptedAI
             m_creature->SetImmobilizedState(false);
             m_creature->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PACIFIED);
 
-            if (m_creature->getVictim())
-                m_creature->GetMotionMaster()->MoveChase(m_creature->getVictim(), m_attackDistance, m_attackAngle, m_moveFurther);
+            if (m_creature->GetVictim())
+                m_creature->GetMotionMaster()->MoveChase(m_creature->GetVictim(), m_attackDistance, m_attackAngle, m_moveFurther);
 
             m_uiPhase = PHASE_3;
 
@@ -678,7 +678,7 @@ struct boss_lady_vashjAI : public ScriptedAI
                 m_introDelayTimer -= uiDiff;
         }
 
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         if (m_uiPhase == PHASE_1 || m_uiPhase == PHASE_3)
@@ -880,7 +880,7 @@ UnitAI* GetAI_mob_enchanted_elemental(Creature* pCreature)
     return new mob_enchanted_elementalAI(pCreature);
 }
 
-bool OnLootItemTaintedCore(Player* player, Item* item, bool apply)
+bool OnLootItemTaintedCore(Player* player, Item* /*item*/, bool apply)
 {
     if (apply)
         player->CastSpell(player, SPELL_PARALYZE, TRIGGERED_OLD_TRIGGERED);

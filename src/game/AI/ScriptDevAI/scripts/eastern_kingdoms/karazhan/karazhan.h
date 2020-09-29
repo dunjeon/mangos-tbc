@@ -134,6 +134,7 @@ enum
     GO_RAJ_BACKDROP                 = 183443,
     GO_RAJ_MOON                     = 183494,
     GO_RAJ_BALCONY                  = 183495,
+    GO_CHESSBOARD                   = 185324,
 
     // Chess event spells
     SPELL_CLEAR_BOARD               = 37366,                    // spell cast to clear the board at the end of the event
@@ -230,7 +231,7 @@ class instance_karazhan : public ScriptedInstance
         void Load(const char* chrIn) override;
         const char* Save() const override { return m_strInstData.c_str(); }
 
-        void Update(uint32 uiDiff) override;
+        void Update(const uint32 diff) override;
 
         GuidVector m_vInfernalRelays;
 

@@ -81,13 +81,13 @@ class PlayerbotPaladinAI : PlayerbotClassAI
         // all combat actions go here
         CombatManeuverReturns DoFirstCombatManeuver(Unit* pTarget);
         CombatManeuverReturns DoNextCombatManeuver(Unit* pTarget);
+        bool CanPull();
         bool Pull();
 
         // all non combat actions go here, ex buffs, heals, rezzes
         void DoNonCombatActions();
 
         // Utility Functions
-        bool CanPull();
         bool CastHoTOnTank();
 
     private:
@@ -98,6 +98,10 @@ class PlayerbotPaladinAI : PlayerbotClassAI
 
         // Heals the target based off its hps
         CombatManeuverReturns HealPlayer(Player* target);
+        // Resurrects the target
+        CombatManeuverReturns ResurrectPlayer(Player* target);
+        // Dispel disease or negative magic effects from an internally selected target
+        CombatManeuverReturns DispelPlayer(Player* target = nullptr);
 
         //Changes aura according to spec/orders
         void CheckAuras();

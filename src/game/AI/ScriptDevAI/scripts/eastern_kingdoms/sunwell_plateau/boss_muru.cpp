@@ -21,7 +21,7 @@ SDComment: Small adjustments required
 SDCategory: Sunwell Plateau
 EndScriptData */
 
-#include "AI/ScriptDevAI/include/precompiled.h"
+#include "AI/ScriptDevAI/include/sc_common.h"
 #include "sunwell_plateau.h"
 
 enum
@@ -119,11 +119,11 @@ struct boss_muruAI : public Scripted_NoMovementAI
             m_pInstance->SetData(TYPE_MURU, FAIL);
     }
 
-    void DamageTaken(Unit* /*pDoneBy*/, uint32& uiDamage, DamageEffectType /*damagetype*/) override
+    void DamageTaken(Unit* /*pDoneBy*/, uint32& damage, DamageEffectType /*damagetype*/, SpellEntry const* /*spellInfo*/) override
     {
-        if (uiDamage > m_creature->GetHealth())
+        if (damage > m_creature->GetHealth())
         {
-            uiDamage = 0;
+            damage = std::min(damage, m_creature->GetHealth() - 1);
 
             if (!m_bIsTransition)
             {
@@ -149,7 +149,7 @@ struct boss_muruAI : public Scripted_NoMovementAI
                 m_creature->ForcedDespawn(1000);
             // no break here; All other summons should behave the same way
             default:
-                pSummoned->AI()->AttackStart(m_creature->getVictim());
+                pSummoned->AI()->AttackStart(m_creature->GetVictim());
                 break;
         }
     }
@@ -183,7 +183,7 @@ struct boss_muruAI : public Scripted_NoMovementAI
 
     void UpdateAI(const uint32 uiDiff) override
     {
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         // Return if already in transition
@@ -274,7 +274,7 @@ struct boss_entropiusAI : public ScriptedAI
 
     void UpdateAI(const uint32 uiDiff) override
     {
-        if (!m_creature->SelectHostileTarget() || !m_creature->getVictim())
+        if (!m_creature->SelectHostileTarget() || !m_creature->GetVictim())
             return;
 
         if (m_uiBlackHoleTimer < uiDiff)
