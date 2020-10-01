@@ -2268,7 +2268,7 @@ void World::LoadSpamRecords(bool reload)
 void World::ResetDailyQuests()
 {
     DETAIL_LOG("Daily quests reset for all characters.");
-    CharacterDatabase.Execute("TRUNCATE character_queststatus_daily");
+    CharacterDatabase.Execute("DElETE FROM character_queststatus_daily");
     for (SessionMap::const_iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
         if (itr->second->GetPlayer())
             itr->second->GetPlayer()->ResetDailyQuestStatus();
@@ -2282,7 +2282,7 @@ void World::ResetDailyQuests()
 void World::ResetWeeklyQuests()
 {
     DETAIL_LOG("Weekly quests reset for all characters.");
-    CharacterDatabase.Execute("TRUNCATE character_queststatus_weekly");
+    CharacterDatabase.Execute("DElETE FROM character_queststatus_weekly");
     for (SessionMap::const_iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
         if (itr->second->GetPlayer())
             itr->second->GetPlayer()->ResetWeeklyQuestStatus();
@@ -2297,7 +2297,7 @@ void World::ResetWeeklyQuests()
 void World::ResetMonthlyQuests()
 {
     DETAIL_LOG("Monthly quests reset for all characters.");
-    CharacterDatabase.Execute("TRUNCATE character_queststatus_monthly");
+    CharacterDatabase.Execute("DElETE FROM character_queststatus_monthly");
 
     for (SessionMap::const_iterator itr = m_sessions.begin(); itr != m_sessions.end(); ++itr)
         if (itr->second->GetPlayer())
